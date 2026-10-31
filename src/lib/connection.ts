@@ -1,27 +1,34 @@
-/** Public connection details fetched directly from Cloudflare and IPinfo. */
+/** Public IPv4 and IPv6 exit addresses from a mainland and an overseas source. */
 
-export type IpFamily = "IPv4" | "IPv6";
+export type IpLookupResult =
+  | { status: "ok"; ip: string }
+  | { status: "unsupported" }
+  | { status: "unavailable"; reason: "network" | "http" | "invalid" };
 
-export type ConnectionExit = {
-  ip: string;
-  family: IpFamily;
-  countryCode?: string;
-  city?: string;
-  region?: string;
-  asn?: string;
-  organization?: string;
-  colo?: string;
-  tls?: string;
-  warp?: string;
+export type ConnectionProvider = {
+  provider: "dnspod" | "icanhazip";
+  ipv4: IpLookupResult;
+  ipv6: IpLookupResult;
 };
 
 export type ConnectionReport = {
-  cloudflare: ConnectionExit | null;
-  ipinfo: ConnectionExit | null;
+  china: ConnectionProvider;
+  international: ConnectionProvider;
 };
 
-const CLOUDFLARE_TRACE_URL = "https://one.one.one.one/cdn-cgi/trace";
-const IPINFO_URL = "https://ipinfo.io/json";
+const ENDPOINTS = {
+  china: {
+    provider: "dnspod",
+    ipv4: "https://ipv4.ddnspod.com/checkip",
+    ipv6: "https://ipv6.ddnspod.com/checkip",
+  },
+  international: {
+    provider: "icanhazip",
+    ipv4: "https://ipv4.icanhazip.com/",
+    ipv6: "https://ipv6.icanhazip.com/",
+  },
+} as const;
+
 const REQUEST_TIMEOUT_MS = 4_500;
 
 function abortReason(signal: AbortSignal): unknown {
@@ -30,11 +37,33 @@ function abortReason(signal: AbortSignal): unknown {
   );
 }
 
-async function request<T>(
+function isAddress(value: string, family: "ipv4" | "ipv6"): boolean {
+  if (family === "ipv4") {
+    const groups = value.split(".");
+    return (
+      groups.length === 4 &&
+      groups.every((group) => {
+        if (!/^\d{1,3}$/.test(group)) return false;
+        const octet = Number(group);
+        return octet >= 0 && octet <= 255;
+      })
+    );
+  }
+
+  if (!value.includes(":") || !/^[\da-f:.]+$/i.test(value)) return false;
+  try {
+    new URL(`http://[${value}]/`);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function readAddress(
   url: string,
-  parse: (response: Response) => Promise<T>,
+  family: "ipv4" | "ipv6",
   signal?: AbortSignal,
-): Promise<T> {
+): Promise<IpLookupResult> {
   if (signal?.aborted) throw abortReason(signal);
 
   const controller = new AbortController();
@@ -51,115 +80,56 @@ async function request<T>(
       redirect: "follow",
       signal: controller.signal,
     });
-    return await parse(response);
+
+    if (response.status === 501) return { status: "unsupported" };
+    if (!response.ok) return { status: "unavailable", reason: "http" };
+
+    const ip = (await response.text()).trim();
+    return isAddress(ip, family)
+      ? { status: "ok", ip }
+      : { status: "unavailable", reason: "invalid" };
+  } catch {
+    if (signal?.aborted) throw abortReason(signal);
+    return { status: "unavailable", reason: "network" };
   } finally {
     clearTimeout(timeoutId);
     signal?.removeEventListener("abort", forwardAbort);
   }
 }
 
-function parseTrace(body: string): Map<string, string> {
-  const values = new Map<string, string>();
-  for (const line of body.split(/\r?\n/)) {
-    const separator = line.indexOf("=");
-    if (separator > 0) {
-      values.set(line.slice(0, separator), line.slice(separator + 1));
-    }
-  }
-  return values;
-}
-
-function getFamily(ip: string): IpFamily {
-  return ip.includes(":") ? "IPv6" : "IPv4";
-}
-
-function optionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
-}
-
-function parseOrganization(org: string | undefined): {
-  asn?: string;
-  organization?: string;
-} {
-  if (!org) return {};
-  const match = org.match(/^(AS\d+)\s*(.*)$/i);
-  return match
-    ? { asn: match[1].toUpperCase(), organization: match[2] || undefined }
-    : { organization: org };
-}
-
-async function readCloudflare(
+async function readProvider(
+  provider: ConnectionProvider["provider"],
+  urls: { ipv4: string; ipv6: string },
   signal?: AbortSignal,
-): Promise<ConnectionExit | null> {
-  try {
-    return await request(
-      CLOUDFLARE_TRACE_URL,
-      async (response) => {
-        if (!response.ok) return null;
-        const values = parseTrace(await response.text());
-        const ip = optionalString(values.get("ip"));
-        if (!ip) return null;
-        return {
-          ip,
-          family: getFamily(ip),
-          countryCode: optionalString(values.get("loc")),
-          colo: optionalString(values.get("colo")),
-          tls: optionalString(values.get("tls")),
-          warp: optionalString(values.get("warp")),
-        };
-      },
-      signal,
-    );
-  } catch (error) {
-    if (signal?.aborted) throw abortReason(signal);
-    return null;
-  }
+): Promise<ConnectionProvider> {
+  const [ipv4, ipv6] = await Promise.all([
+    readAddress(urls.ipv4, "ipv4", signal),
+    readAddress(urls.ipv6, "ipv6", signal),
+  ]);
+  return { provider, ipv4, ipv6 };
 }
 
-type IpinfoResponse = {
-  ip?: unknown;
-  country?: unknown;
-  city?: unknown;
-  region?: unknown;
-  org?: unknown;
-};
-
-async function readIpinfo(
-  signal?: AbortSignal,
-): Promise<ConnectionExit | null> {
-  try {
-    return await request(
-      IPINFO_URL,
-      async (response) => {
-        if (!response.ok) return null;
-        const data = (await response.json()) as IpinfoResponse;
-        const ip = optionalString(data.ip);
-        if (!ip) return null;
-        return {
-          ip,
-          family: getFamily(ip),
-          countryCode: optionalString(data.country),
-          city: optionalString(data.city),
-          region: optionalString(data.region),
-          ...parseOrganization(optionalString(data.org)),
-        };
-      },
-      signal,
-    );
-  } catch (error) {
-    if (signal?.aborted) throw abortReason(signal);
-    return null;
-  }
-}
-
-/** Read each provider once; source-specific addresses and metadata stay separate. */
+/** Read all four source/family combinations independently, preserving partial results. */
 export async function fetchConnectionInfo(
   signal?: AbortSignal,
 ): Promise<ConnectionReport> {
   if (signal?.aborted) throw abortReason(signal);
-  const [cloudflare, ipinfo] = await Promise.all([
-    readCloudflare(signal),
-    readIpinfo(signal),
+
+  const [china, international] = await Promise.all([
+    readProvider(
+      ENDPOINTS.china.provider,
+      { ipv4: ENDPOINTS.china.ipv4, ipv6: ENDPOINTS.china.ipv6 },
+      signal,
+    ),
+    readProvider(
+      ENDPOINTS.international.provider,
+      {
+        ipv4: ENDPOINTS.international.ipv4,
+        ipv6: ENDPOINTS.international.ipv6,
+      },
+      signal,
+    ),
   ]);
-  return { cloudflare, ipinfo };
+
+  return { china, international };
 }

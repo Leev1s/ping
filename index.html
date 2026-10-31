@@ -32,7 +32,25 @@
     <script>
       try {
         const t = localStorage.getItem("ping-theme");
-        if (["light", "dark", "gruvbox", "nord"].includes(t))
+        if (
+          [
+            "light",
+            "dark",
+            "light-neutral",
+            "dark-neutral",
+            "halloween",
+            "forest",
+            "dracula",
+            "night",
+            "dim",
+            "nord",
+            "sunset",
+            "abyss",
+            "cupcake",
+            "dark-daisyui5",
+            "gruvbox",
+          ].includes(t)
+        )
           document.documentElement.dataset.theme = t;
       } catch {}
     </script>

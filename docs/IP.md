@@ -1,33 +1,40 @@
-# IP information
+# Connection addresses
 
-Ping reads connection details directly from two public providers when the page
-loads or the user refreshes the connection panel:
+Ping requests IPv4 and IPv6 addresses independently from two public endpoints
+when the page opens and when the connection panel is refreshed:
 
-- Cloudflare Trace provides the address and family observed by Cloudflare, plus
-  the serving data center (`colo`), country code, TLS version, and WARP status.
-- IPinfo's JSON endpoint provides its observed address and family, country,
-  city, region, ASN, and network organization.
+| Route | Provider | IPv4 | IPv6 |
+| --- | --- | --- | --- |
+| China | Tencent DNSPod | `ipv4.ddnspod.com/checkip` | `ipv6.ddnspod.com/checkip` |
+| International | ICanHazIP | `ipv4.icanhazip.com/` | `ipv6.icanhazip.com/` |
 
-The two results are shown as separate provider observations. Their IP addresses
-can differ when routes, address families, VPNs, or network policies differ, so
-the app does not attach one provider's location or ASN to the other's IP. One
-successful provider result does not establish that the device has both IPv4 and
-IPv6 connectivity.
+The requests run directly in the browser and use CORS-enabled, unauthenticated
+plain-text endpoints. The page does not proxy the responses through Ping or add
+them to latency history. The two providers can observe different network exits,
+so their addresses are shown separately.
 
-The requests run in the visitor's browser. Ping has no IP lookup backend and
-does not add these values to latency history. Both endpoints support CORS and
-require no API keys. IPinfo's unauthenticated legacy API is free and limited to
-1,000 requests per day per client IP; failures leave the other provider's result
-available.
+The providers return addresses only; this view does not infer location or ISP
+from an address. A source is marked unsupported only when its endpoint returns
+HTTP 501. Other HTTP errors and browser network failures are shown as unavailable;
+fetch cannot reliably tell a missing IP-family route apart from DNS, CORS, or
+other connection errors.
 
 ## References
 
-- [ip.skk.moe](https://ip.skk.moe/) — reference layout for provider-specific IP,
-  location, ISP, and ASN details.
-- [Cloudflare `/cdn-cgi/` endpoint](https://developers.cloudflare.com/fundamentals/reference/cdn-cgi-endpoint/) —
-  Cloudflare's trace endpoint and edge information.
-- [Cloudflare routing and `colo`](https://developers.cloudflare.com/support/troubleshooting/general-troubleshooting/geographic-traffic-routing/) —
-  `colo` identifies the serving data center; anycast routing may not select the
-  geographically closest one.
-- [IPinfo free API options](https://support.ipinfo.io/hc/en-us/articles/34121895556242-Legacy-Free-API-vs-IPinfo-Lite) —
-  unauthenticated legacy API fields and limits.
+- [DNSPod services agreement](https://docs.dnspod.com/account/terms-of-service/) —
+  identifies DNSPod as Tencent's service.
+- [DNSPod overview](https://docs.dnspod.com/dns/dns-overview/)
+- [Tencent DNSPod IPv4 endpoint](https://ipv4.ddnspod.com/checkip)
+- [Tencent DNSPod IPv6 endpoint](https://ipv6.ddnspod.com/checkip)
+- [ICanHazIP IPv4 endpoint](https://ipv4.icanhazip.com/)
+- [ICanHazIP IPv6 endpoint](https://ipv6.icanhazip.com/)
+
+Both endpoint pairs were read successfully from Chromium with a separate page
+origin on 2026-10-31. Each returned HTTP 200 with `Access-Control-Allow-Origin: *`.
+The DNSPod IPv4 host resolved through `cdn4-ct.ipv6-only.cn` to China Telecom
+addresses; APNIC RDAP records the sampled IPv4 as `CN` / `CHINANET-JX` and the
+sampled IPv6 host address as `CN` / `CT-IPV6-IDC-ADDRESS`. These are provider
+edge addresses, not visitor addresses, and DNS answers can change. [IPv4 RDAP](https://rdap.apnic.net/ip/106.225.194.44), [IPv6 RDAP](https://rdap.apnic.net/ip/240e:96a:4000:36::af0c:1323).
+
+ICanHazIP's original operator announced Cloudflare as its new owner and
+operator in 2021 ([announcement](https://major.io/p/a-new-future-for-icanhazip/)).

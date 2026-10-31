@@ -8,6 +8,16 @@ The 1,200-attempt cap is independent of session duration and sample rate. Its ap
 
 This is session history only: samples are not copied to local storage or sent to a server. Closing or refreshing the page clears them. The theme and interval preferences are stored locally, separately from measurement history. Manual JSON export includes retained samples and session counters but no IP details. Clearing history resets the session counters and starts a new measurement session.
 
+The plot keeps a fixed physical frame while its linear range adapts independently
+for China and International. Each range uses the largest of that group's four
+per-probe P95 values, adds 20% headroom, and rounds up to a nice tick; it has a
+50 ms minimum and starts at 100 ms before valid readings. Three tick labels show
+0, midpoint, and right bound.
+
+When hidden, sampling continues on a best-effort basis; browsers can throttle or
+suspend timers. On return, Ping starts a fresh round immediately and does not
+replay missed intervals.
+
 ## Memory rationale
 
 The retained object count is bounded by `8 × 1,200`, regardless of how long the page stays open. Each update returns a fresh capped array; the previous array can be collected after no render references it. Browser JavaScript engines reclaim unreachable objects, so evicted records must no longer be held by strong references. The history module does not use Resource Timing entries or increase the browser's separate resource-timing buffer.
@@ -20,4 +30,4 @@ Sources: [MDN JavaScript memory management](https://developer.mozilla.org/en-US/
 - Across eight probes, in-memory history never exceeds 9,600 records, regardless of session duration.
 - The fixed trailing 30-minute view excludes older and future-dated samples while retaining failed attempts for status and counters.
 - Statistics read every eligible retained sample in the window; each plot draws no more than 120 valid marks and preserves endpoints and latency extrema when the point limit permits.
-- Point opacity reflects elapsed age. Eviction removes old records without resizing the plot or changing its 0–1,000 ms linear axis.
+- Point opacity reflects elapsed age. Eviction removes old records and dynamic range changes without resizing the plot frame.

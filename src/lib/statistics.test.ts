@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { statistics } from "./statistics";
+import { statistics, groupScale } from "./statistics";
 import type { Sample } from "./network";
 const samples = (values: number[]): Sample[] =>
   values.map((latency, at) => ({ latency, at, outcome: "ok" }));
@@ -67,5 +67,16 @@ describe("box statistics", () => {
       count: 1,
       median: 10,
     });
+  });
+});
+
+describe("shared regional scale", () => {
+  it("uses the slowest probe P95, leaves headroom and returns readable bounds", () => {
+    expect(groupScale([null, null])).toBe(100);
+    expect(groupScale([0, 10])).toBe(50);
+    expect(groupScale([20, 80, 100, 160])).toBe(200);
+    expect(groupScale([50, 500, 200, 100])).toBe(1000);
+    expect(groupScale([2500, 100])).toBe(5000);
+    expect(groupScale([NaN, Infinity, -1])).toBe(100);
   });
 });

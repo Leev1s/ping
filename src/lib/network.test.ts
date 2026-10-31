@@ -102,6 +102,29 @@ describe("probe", () => {
     });
   });
 
+  it("rejects a stale response even when the browser delayed its timeout callback", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    let finish!: (response: Response) => void;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            finish = resolve;
+          }),
+      ),
+    );
+    const pending = probe(corsTarget);
+    // Advance wall time without executing timers, as during a suspended page.
+    vi.setSystemTime(60_000);
+    finish(new Response(null, { status: 200 }));
+    await expect(pending).resolves.toMatchObject({
+      outcome: "timeout",
+      latency: null,
+    });
+  });
+
   it("propagates caller cancellation instead of counting it as an outage", async () => {
     const controller = new AbortController();
     const fetchMock = vi.fn(

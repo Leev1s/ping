@@ -107,6 +107,7 @@ export async function probe(
   signal?: AbortSignal,
 ): Promise<Sample> {
   const startedAt = performance.now();
+  const wallStartedAt = Date.now();
   const at = () => Date.now();
 
   if (signal?.aborted) throw abortReason(signal);
@@ -132,7 +133,21 @@ export async function probe(
       signal: controller.signal,
     });
 
+    if (signal?.aborted) throw abortReason(signal);
     const latency = elapsedSince(startedAt);
+    // Timer callbacks can be delayed by background throttling or OS sleep.
+    // An overdue response must not become an artificial multi-minute latency.
+    if (
+      latency > PROBE_TIMEOUT_MS ||
+      Date.now() - wallStartedAt > PROBE_TIMEOUT_MS
+    ) {
+      return {
+        at: at(),
+        latency: null,
+        outcome: "timeout",
+        verification: target.method,
+      };
+    }
     if (
       target.method === "opaque" ||
       response.type === "opaque" ||

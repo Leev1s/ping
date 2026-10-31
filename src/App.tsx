@@ -1,10 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  Activity,
   ArrowDownToLine,
   Check,
-  CircleCheck,
-  CircleHelp,
   Ellipsis,
   Eye,
   EyeOff,
@@ -14,6 +11,7 @@ import {
   RotateCcw,
   X,
 } from "lucide-react";
+import { ThemePicker, isTheme, type Theme } from "./components/theme-picker";
 import { MagicCard } from "./components/magicui/magic-card";
 import { NumberTicker } from "./components/magicui/number-ticker";
 import { TARGETS, probe, type Sample, type ProbeTarget } from "./lib/network";
@@ -24,17 +22,9 @@ import {
   plotHistory,
   selectRecentHistory,
 } from "./lib/history";
-import { hasLatency, statistics } from "./lib/statistics";
+import { hasLatency, statistics, groupScale } from "./lib/statistics";
 
 const WINDOW_MINUTES = 30;
-const PLOT_SCALE = 1000;
-const THEMES = {
-  light: "Light",
-  dark: "Dark",
-  gruvbox: "Gruvbox",
-  nord: "Nord",
-} as const;
-type Theme = keyof typeof THEMES;
 type ProbeHistory = { samples: Sample[]; total: number; failures: number };
 const timeFormat = new Intl.DateTimeFormat("en-GB", {
   hour: "2-digit",
@@ -43,16 +33,6 @@ const timeFormat = new Intl.DateTimeFormat("en-GB", {
   hourCycle: "h23",
 });
 const EMPTY: ProbeHistory = { samples: [], total: 0, failures: 0 };
-const AVATARS: Record<string, string> = {
-  baidu: "BD",
-  bilibili: "BL",
-  wechat: "WX",
-  taobao: "TB",
-  cloudflare: "CF",
-  jsdelivr: "JS",
-  github: "GH",
-  microsoft: "MS",
-};
 const number = (value: number | null) =>
   value === null ? "—" : Math.round(value).toLocaleString("en-US");
 
@@ -60,7 +40,9 @@ function ProbePlot({
   samples,
   now,
   stats,
+  scale,
 }: {
+  scale: number;
   samples: Sample[];
   now: number;
   stats: ReturnType<typeof statistics>;
@@ -71,24 +53,24 @@ function ProbePlot({
     WINDOW_MINUTES * 60000,
   );
   const position = (value: number) =>
-    3 + (Math.min(PLOT_SCALE, Math.max(0, value)) / PLOT_SCALE) * 94;
+    3 + (Math.min(scale, Math.max(0, value)) / scale) * 94;
   const x = (value: number) => `${position(value)}%`;
   const overflow = samples.filter(
-    (sample) => hasLatency(sample) && sample.latency > PLOT_SCALE,
+    (sample) => hasLatency(sample) && sample.latency > scale,
   ).length;
   return (
     <div className="plot-frame">
       <svg
         className="boxplot"
-        data-scale={PLOT_SCALE}
+        data-scale={scale}
         role="img"
-        aria-label={`HTTP latency, ${stats.count} valid samples. Median ${number(stats.median)} ms, Q1 ${number(stats.q1)}, Q3 ${number(stats.q3)}. ${overflow} readings above ${PLOT_SCALE} ms.`}
+        aria-label={`HTTP latency, ${stats.count} valid samples. Median ${number(stats.median)} ms, Q1 ${number(stats.q1)}, Q3 ${number(stats.q3)}. ${overflow} readings above ${scale} ms.`}
       >
         <title>
           Box: Q1–Q3. Line: median. Whiskers: 1.5×IQR. Dots: measurements, older
-          points fade. Fixed linear 0–1000 ms axis.
+          points fade. Linear axis, shared within this region.
         </title>
-        {[0, 250, 500, 750, 1000].map((tick) => (
+        {[0, scale / 2, scale].map((tick) => (
           <line
             className="plot-gridline"
             key={tick}
@@ -140,7 +122,7 @@ function ProbePlot({
           )}
         {marks.map(({ sample, opacity }, i) => (
           <circle
-            className={`sample-point ${sample.latency! > PLOT_SCALE ? "is-overflow" : ""}`}
+            className={`sample-point ${sample.latency! > scale ? "is-overflow" : ""}`}
             key={`${sample.at}-${i}`}
             cx={x(sample.latency!)}
             cy={`${69 + ((Math.floor(sample.at) % 13) - 6) * 1.6}%`}
@@ -163,9 +145,9 @@ function ProbePlot({
       </svg>
       <div
         className="plot-axis"
-        aria-label="Fixed linear 0–1000 millisecond scale"
+        aria-label={`Linear 0–${scale} millisecond scale`}
       >
-        {[0, 250, 500, 750, 1000].map((tick, i) => (
+        {[0, scale / 2, scale].map((tick, i) => (
           <span
             key={tick}
             style={{
@@ -173,13 +155,13 @@ function ProbePlot({
               transform:
                 i === 0
                   ? "none"
-                  : i === 4
+                  : i === 2
                     ? "translateX(-100%)"
                     : "translateX(-50%)",
             }}
           >
             {tick >= 1000 ? `${tick / 1000}k` : tick}
-            {i === 4 ? " ms" : ""}
+            {i === 2 ? " ms" : ""}
           </span>
         ))}
       </div>
@@ -202,15 +184,14 @@ export default function App() {
   const [intervalDraft, setIntervalDraft] = useState(String(interval));
   const [theme, setTheme] = useState<Theme>(() => {
     const saved = document.documentElement.dataset.theme;
-    return saved && saved in THEMES ? (saved as Theme) : "light";
+    return isTheme(saved) ? saved : "light";
   });
+  const [pending, setPending] = useState<Record<string, boolean>>({});
+  const [receivedAt, setReceivedAt] = useState(0);
   const [history, setHistory] = useState<Record<string, ProbeHistory>>({});
   const [now, setNow] = useState(Date.now);
   const [startedAt, setStartedAt] = useState(Date.now);
-  const [connection, setConnection] = useState<ConnectionReport>({
-    cloudflare: null,
-    ipinfo: null,
-  });
+  const [connection, setConnection] = useState<ConnectionReport | null>(null);
   const [connectionLoading, setConnectionLoading] = useState(true);
   const [infoVersion, setInfoVersion] = useState(0);
   const [showAddresses, setShowAddresses] = useState(false);
@@ -218,7 +199,8 @@ export default function App() {
   const [notice, setNotice] = useState("");
   const [epoch, setEpoch] = useState(0);
   const menu = useRef<HTMLDialogElement>(null);
-  const running = !paused && visible && online;
+  const activeSampling = useRef<AbortController | null>(null);
+  const running = !paused && online;
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
     try {
@@ -236,7 +218,13 @@ export default function App() {
       );
   }, [theme]);
   useEffect(() => {
-    const visibility = () => setVisible(!document.hidden);
+    const visibility = () => {
+      setVisible(!document.hidden);
+      if (!document.hidden) {
+        activeSampling.current?.abort();
+        setEpoch((value) => value + 1);
+      }
+    };
     const net = () => setOnline(navigator.onLine);
     document.addEventListener("visibilitychange", visibility);
     window.addEventListener("online", net);
@@ -256,13 +244,16 @@ export default function App() {
   useEffect(() => {
     if (!running) return;
     const controller = new AbortController();
+    activeSampling.current = controller;
     const timers = new Set<ReturnType<typeof setTimeout>>();
     const run = async (target: ProbeTarget) => {
       const started = performance.now();
+      setPending((p) => ({ ...p, [target.id]: true }));
       try {
         const sample = await probe(target, controller.signal);
         if (controller.signal.aborted) return;
         setNow(sample.at);
+        if (sample.latency !== null) setReceivedAt(sample.at);
         setHistory((prev) => {
           const h = prev[target.id] ?? EMPTY;
           return {
@@ -282,6 +273,7 @@ export default function App() {
         if (controller.signal.aborted) return;
       }
       if (!controller.signal.aborted) {
+        setPending((p) => ({ ...p, [target.id]: false }));
         const timer = setTimeout(
           () => {
             timers.delete(timer);
@@ -296,6 +288,9 @@ export default function App() {
     return () => {
       controller.abort();
       timers.forEach(clearTimeout);
+      if (activeSampling.current === controller) activeSampling.current = null;
+      setPending({});
+      setReceivedAt(0);
     };
   }, [running, interval, epoch]);
   useEffect(() => {
@@ -322,6 +317,27 @@ export default function App() {
     const timer = setTimeout(() => setNotice(""), 2200);
     return () => clearTimeout(timer);
   }, [notice]);
+  const summaries = Object.fromEntries(
+    TARGETS.map((target) => {
+      const h = history[target.id] ?? EMPTY;
+      const recent = selectRecentHistory(
+        h.samples,
+        now,
+        WINDOW_MINUTES * 60000,
+      );
+      return [target.id, { h, recent, stats: statistics(recent) }];
+    }),
+  );
+  const scales = Object.fromEntries(
+    (["cn", "global"] as const).map((region) => [
+      region,
+      groupScale(
+        TARGETS.filter((target) => target.region === region).map(
+          (target) => summaries[target.id].stats.p95,
+        ),
+      ),
+    ]),
+  ) as Record<"cn" | "global", number>;
   const total = Object.values(history).reduce((sum, h) => sum + h.total, 0);
   const retained = Object.values(history).reduce(
     (sum, h) => sum + h.samples.length,
@@ -342,12 +358,12 @@ export default function App() {
     : paused
       ? "Paused"
       : !visible
-        ? "Hidden"
+        ? "Background"
         : "Live";
   const exportData = () => {
     const payload = {
       app: "Ping",
-      version: 4,
+      version: 5,
       exportedAt: new Date().toISOString(),
       startedAt: new Date(startedAt).toISOString(),
       intervalSeconds: interval,
@@ -387,25 +403,46 @@ export default function App() {
           <button
             className={`live-control ${running ? "is-live" : ""}`}
             aria-label={paused ? "Resume" : "Pause"}
-            title={`${stateText} · ${interval}s · ${paused ? "Resume" : "Pause"} sampling`}
+            title={`${stateText} · ${interval}s · ${paused ? "Resume" : "Pause"} sampling${!visible ? " · Background timing is best effort" : ""}`}
             onClick={() => setPaused(!paused)}
           >
-            <Activity className="activity-chart" size={20} aria-hidden="true" />
+            <svg
+              className={`activity-chart ${Object.values(pending).some(Boolean) ? "is-sending" : ""}`}
+              width="22"
+              height="22"
+              viewBox="0 0 22 22"
+              aria-hidden="true"
+            >
+              <path
+                d="M2 6h17m-4-3 4 3-4 3M20 16H3m4-3-4 3 4 3"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.4"
+              />
+              {running && visible && (
+                <circle
+                  className="tx-packet"
+                  cx="3"
+                  cy="6"
+                  r="2"
+                  fill="currentColor"
+                />
+              )}
+              {running && visible && receivedAt > 0 && (
+                <circle
+                  key={receivedAt}
+                  className="rx-packet"
+                  cx="19"
+                  cy="16"
+                  r="2"
+                  fill="currentColor"
+                />
+              )}
+            </svg>
             <span className="status-badge">{stateText}</span>
-            <span className="cadence">{interval}s</span>
+            <span className="cadence">{Number(interval.toFixed(2))}s</span>
           </button>
-          <select
-            className="theme-select"
-            aria-label="Theme"
-            value={theme}
-            onChange={(e) => setTheme(e.target.value as Theme)}
-          >
-            {Object.entries(THEMES).map(([id, name]) => (
-              <option key={id} value={id}>
-                {name}
-              </option>
-            ))}
-          </select>
+          <ThemePicker value={theme} onChange={setTheme} />
           <button
             className="control"
             aria-label="More options"
@@ -448,83 +485,75 @@ export default function App() {
             </div>
           </div>
           <div className="connection-cards">
-            {(["ipinfo", "cloudflare"] as const).map((provider) => {
-              const data = connection[provider];
-              const location = [data?.city, data?.region, data?.countryCode]
-                .filter(Boolean)
-                .filter((v, i, a) => a.indexOf(v) === i)
-                .join(", ");
-              const Card = provider === "ipinfo" ? MagicCard : "article";
+            {(["china", "international"] as const).map((region) => {
+              const data = connection?.[region];
+              const Card = region === "china" ? MagicCard : "article";
               return (
                 <Card
                   className="connection-card"
-                  data-provider={provider}
-                  key={provider}
+                  data-provider={region}
+                  key={region}
                 >
                   <div className="exit-heading">
-                    <span className={`provider-mark ${provider}`}>
-                      {provider === "cloudflare" ? "CF" : "IP"}
-                    </span>
                     <h3>
-                      {provider === "cloudflare" ? "Cloudflare" : "IPinfo"}
-                      <span>exit</span>
+                      {region === "china" ? "China exit" : "International exit"}
                     </h3>
-                    <span className="ip-family">{data?.family ?? "—"}</span>
+                    <span className="exit-source">
+                      {region === "china" ? "Tencent DNSPod" : "ICanHazIP"}
+                    </span>
                   </div>
-                  <div
-                    className={`exit-address ${!data ? "is-unavailable" : ""}`}
-                    title={showAddresses ? data?.ip : undefined}
-                  >
-                    {data
-                      ? showAddresses
-                        ? data.ip
-                        : "•••.•••.•••.•••"
-                      : connectionLoading
+                  <div className="address-rows">
+                    {(["ipv4", "ipv6"] as const).map((family) => {
+                      const lookup = data?.[family];
+                      const address =
+                        lookup?.status === "ok" ? lookup.ip : undefined;
+                      const label = connectionLoading
                         ? "Checking…"
-                        : "Unavailable"}
-                  </div>
-                  {provider === "cloudflare" ? (
-                    <dl className="exit-details">
-                      <div>
-                        <dt>Country / edge</dt>
-                        <dd className="edge-value">
-                          {data?.countryCode ?? "—"} / {data?.colo ?? "—"}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Transport</dt>
-                        <dd className="tls-value">
-                          {data?.tls ?? "—"}
-                          <span className="warp-value">
-                            WARP {data?.warp ?? "—"}
+                        : lookup?.status === "unsupported"
+                          ? "Not supported"
+                          : "Unavailable";
+                      return (
+                        <div className="address-row" key={family}>
+                          <span className="address-label">
+                            {family === "ipv4" ? "IPv4" : "IPv6"}
                           </span>
-                        </dd>
-                      </div>
-                    </dl>
-                  ) : (
-                    <dl className="exit-details">
-                      <div>
-                        <dt>Location</dt>
-                        <dd className="network-location" title={location}>
-                          {location || "—"}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt>Network</dt>
-                        <dd>
-                          <span className="network-asn">
-                            {data?.asn ?? "—"}
-                          </span>
-                          <span
-                            className="network-organization"
-                            title={data?.organization}
+                          <button
+                            className={`exit-address copy-address ${!address ? "is-unavailable" : ""}`}
+                            disabled={!address || !showAddresses}
+                            aria-label={
+                              address && showAddresses
+                                ? `Copy full ${family === "ipv4" ? "IPv4" : "IPv6"} address from ${region === "china" ? "China" : "International"} exit`
+                                : undefined
+                            }
+                            title={
+                              address && showAddresses
+                                ? `${address} · Click to copy`
+                                : !address
+                                  ? "Network failures are unavailable; they do not prove that your network lacks IPv6."
+                                  : undefined
+                            }
+                            onClick={async () => {
+                              if (!address) return;
+                              try {
+                                await navigator.clipboard.writeText(address);
+                                setNotice(
+                                  `${family === "ipv4" ? "IPv4" : "IPv6"} address copied`,
+                                );
+                              } catch {
+                                setNotice("Clipboard unavailable");
+                              }
+                            }}
                           >
-                            {data?.organization ?? "—"}
-                          </span>
-                        </dd>
-                      </div>
-                    </dl>
-                  )}
+                            {address
+                              ? showAddresses
+                                ? address
+                                : "••••••••"
+                              : label}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </Card>
               );
             })}
@@ -556,16 +585,12 @@ export default function App() {
               <div className="probe-grid">
                 {TARGETS.filter((target) => target.region === region).map(
                   (target) => {
-                    const h = history[target.id] ?? EMPTY;
-                    const recent = selectRecentHistory(
-                      h.samples,
-                      now,
-                      WINDOW_MINUTES * 60000,
-                    );
-                    const stats = statistics(recent);
+                    const { h, recent, stats } = summaries[target.id];
                     const last = h.samples.at(-1);
                     const value =
                       last && hasLatency(last) ? last.latency : null;
+                    const failed =
+                      last?.outcome === "error" || last?.outcome === "timeout";
                     const state = !last
                       ? "Waiting"
                       : last.outcome === "ok"
@@ -577,38 +602,32 @@ export default function App() {
                             : "Failed";
                     return (
                       <article
-                        className="probe-card"
+                        className={`probe-card ${failed ? "is-unreachable" : ""}`}
                         data-region={region}
                         key={target.id}
                       >
                         <div className="probe-heading">
-                          <span
-                            className={`service-avatar ${region}`}
-                            aria-hidden="true"
-                          >
-                            {AVATARS[target.id]}
-                          </span>
                           <div className="probe-title">
                             <h3 className="probe-name">
-                              {target.name}
                               <span
-                                className={`probe-status ${last?.outcome ?? "waiting"}`}
-                                title={state}
+                                key={`${last?.at ?? 0}-${pending[target.id]}`}
+                                className={`latency-dot ${pending[target.id] ? "is-probing" : ""} ${last ? "has-reading" : ""}`}
+                                style={{
+                                  background: failed
+                                    ? "var(--danger)"
+                                    : value === null
+                                      ? "var(--muted)"
+                                      : `color-mix(in oklch, ${value < 250 ? "var(--latency-good)" : "var(--latency-mid)"}, ${value < 250 ? "var(--latency-mid)" : "var(--latency-bad)"} ${Math.min(100, ((value < 250 ? value : value - 250) / 250) * 100)}%)`,
+                                }}
+                                title={
+                                  pending[target.id]
+                                    ? `Measuring · ${state}`
+                                    : state
+                                }
+                                role="img"
                                 aria-label={state}
-                              >
-                                {last?.outcome === "ok" ? (
-                                  <CircleCheck size={12} />
-                                ) : last?.outcome === "unverified" ? (
-                                  <CircleHelp size={12} />
-                                ) : (
-                                  <span className="status-dot" />
-                                )}
-                                <span>
-                                  {state === "Failed" || state === "Timeout"
-                                    ? state
-                                    : ""}
-                                </span>
-                              </span>
+                              />
+                              {target.name}
                             </h3>
                             <span className="probe-domain">
                               {new URL(target.url).hostname}
@@ -617,15 +636,28 @@ export default function App() {
                           <div className="latest-reading">
                             <strong className="probe-latest">
                               {value === null ? (
-                                "—"
+                                <span className="reading-state">
+                                  {failed
+                                    ? last?.outcome === "timeout"
+                                      ? "Timeout"
+                                      : last?.latency !== null
+                                        ? "HTTP error"
+                                        : "No reply"
+                                    : "—"}
+                                </span>
                               ) : (
                                 <NumberTicker value={Math.round(value)} />
                               )}
                             </strong>
-                            <span>ms</span>
+                            <span>{value === null ? "" : "ms"}</span>
                           </div>
                         </div>
-                        <ProbePlot samples={recent} now={now} stats={stats} />
+                        <ProbePlot
+                          samples={recent}
+                          now={now}
+                          stats={stats}
+                          scale={scales[region]}
+                        />
                         <div className="probe-footer">
                           <div className="probe-stats">
                             <span>

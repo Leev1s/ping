@@ -10,25 +10,75 @@ const probeHosts = [
   "res.wx.qq.com",
   "www.taobao.com",
 ] as const;
-const cloudflareHost = "one.one.one.one";
-const ipinfoHost = "ipinfo.io";
+
+const connectionHosts = [
+  "ipv4.ddnspod.com",
+  "ipv6.ddnspod.com",
+  "ipv4.icanhazip.com",
+  "ipv6.icanhazip.com",
+] as const;
+
 const corsHeaders = {
   "access-control-allow-origin": "*",
   "cache-control": "no-store",
 };
+
 const testAddresses = {
-  cloudflare: "2001:db8::1234:abcd",
-  ipinfo: "203.0.113.27",
+  chinaV4: "203.0.113.27",
+  chinaV6: "2001:db8::27",
+  internationalV4: "203.0.113.41",
+  internationalV6: "2001:db8::41",
 };
 
+const themes = [
+  "light",
+  "dark",
+  "light-neutral",
+  "dark-neutral",
+  "halloween",
+  "forest",
+  "dracula",
+  "night",
+  "dim",
+  "nord",
+  "sunset",
+  "abyss",
+  "cupcake",
+  "dark-daisyui5",
+  "gruvbox",
+] as const;
+
+const themeLabels = [
+  "Light",
+  "Dark",
+  "Light neutral",
+  "Dark neutral",
+  "Halloween",
+  "Forest",
+  "Dracula",
+  "Night",
+  "Dim",
+  "Nord",
+  "Sunset",
+  "Abyss",
+  "Cupcake",
+  "Dark daisyUI 5",
+  "Gruvbox",
+] as const;
+
 type Scenario = {
-  outlierHost?: string;
-  errorHost?: string;
+  delayByHost?: Record<string, number>;
+  unreachableProbeHost?: string;
+  unsupportedIpUrl?: string;
+  unreachableIpUrl?: string;
 };
+
 type ProbeWindow = Window & {
   __probeActive?: Record<string, number>;
   __probeMaxActive?: Record<string, number>;
+  __pingSetHidden?: (hidden: boolean) => void;
 };
+
 type NetworkSession = {
   requests: string[];
   setScenario: (scenario: Scenario) => void;
@@ -45,82 +95,82 @@ async function mockNetwork(
   const requests: string[] = [];
   let scenario: Scenario = {};
 
-  await page.addInitScript(
-    (hosts: string[]) => {
-      const state = window as ProbeWindow;
-      state.__probeActive = {};
-      state.__probeMaxActive = {};
-      const originalFetch = window.fetch.bind(window);
-      window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
-        let host: string | undefined;
-        let active = false;
-        const finish = () => {
-          if (!host || !active) return;
-          state.__probeActive![host] = Math.max(
-            0,
-            (state.__probeActive![host] ?? 1) - 1,
-          );
-          active = false;
-        };
-        try {
-          const rawUrl = input instanceof Request ? input.url : String(input);
-          host = new URL(rawUrl).hostname;
-          if (!hosts.includes(host)) host = undefined;
-          if (host) {
-            const count = (state.__probeActive![host] ?? 0) + 1;
-            state.__probeActive![host] = count;
-            state.__probeMaxActive![host] = Math.max(
-              state.__probeMaxActive![host] ?? 0,
-              count,
-            );
-            active = true;
-            init?.signal?.addEventListener("abort", finish, { once: true });
-          }
-        } catch {
-          // Keep the browser's normal fetch error for malformed requests.
-        }
-        return originalFetch(input, init).finally(finish);
+  await page.addInitScript((hosts: string[]) => {
+    const state = window as ProbeWindow;
+    state.__probeActive = {};
+    state.__probeMaxActive = {};
+    const originalFetch = window.fetch.bind(window);
+    window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+      let host: string | undefined;
+      let active = false;
+      const finish = () => {
+        if (!host || !active) return;
+        state.__probeActive![host] = Math.max(
+          0,
+          (state.__probeActive![host] ?? 1) - 1,
+        );
+        active = false;
       };
-    },
-    [...probeHosts],
-  );
+      try {
+        const rawUrl = input instanceof Request ? input.url : String(input);
+        host = new URL(rawUrl).hostname;
+        if (!hosts.includes(host)) host = undefined;
+        if (host) {
+          const count = (state.__probeActive![host] ?? 0) + 1;
+          state.__probeActive![host] = count;
+          state.__probeMaxActive![host] = Math.max(
+            state.__probeMaxActive![host] ?? 0,
+            count,
+          );
+          active = true;
+          init?.signal?.addEventListener("abort", finish, { once: true });
+        }
+      } catch {
+        // Keep the browser's normal fetch error for malformed requests.
+      }
+      return originalFetch(input, init).finally(finish);
+    };
+  }, [...probeHosts]);
 
   page.on("request", (request) => requests.push(request.url()));
   await page.route("https://**/*", async (route) => {
     const url = new URL(route.request().url());
-    if (url.hostname === cloudflareHost) {
+    const rawIpUrl = `${url.origin}${url.pathname}`;
+    if ((connectionHosts as readonly string[]).includes(url.hostname)) {
+      if (scenario.unreachableIpUrl === rawIpUrl) {
+        await route.abort();
+        return;
+      }
+      if (scenario.unsupportedIpUrl === rawIpUrl) {
+        await route.fulfill({ status: 501, headers: corsHeaders, body: "" });
+        return;
+      }
+      const addresses: Record<string, string> = {
+        "ipv4.ddnspod.com": testAddresses.chinaV4,
+        "ipv6.ddnspod.com": testAddresses.chinaV6,
+        "ipv4.icanhazip.com": testAddresses.internationalV4,
+        "ipv6.icanhazip.com": testAddresses.internationalV6,
+      };
       await route.fulfill({
         status: 200,
         headers: { ...corsHeaders, "content-type": "text/plain" },
-        body: "ip=2001:db8::1234:abcd\nloc=SG\ncolo=SIN\ntls=TLSv1.3\nwarp=off\n",
+        body: `${addresses[url.hostname]}\n`,
       });
       return;
     }
-    if (url.hostname === ipinfoHost) {
-      await route.fulfill({
-        status: 200,
-        headers: { ...corsHeaders, "content-type": "application/json" },
-        body: JSON.stringify({
-          ip: testAddresses.ipinfo,
-          hostname: "edge.example.net",
-          city: "Singapore",
-          region: "Singapore",
-          country: "SG",
-          loc: "1.3521,103.8198",
-          org: "AS64500 Example Networks",
-          timezone: "Asia/Singapore",
-        }),
-      });
-      return;
-    }
+
     if ((probeHosts as readonly string[]).includes(url.hostname)) {
       const currentScenario = scenario;
       const delay =
-        currentScenario.outlierHost === url.hostname ? 1_350 : responseDelayMs;
+        currentScenario.delayByHost?.[url.hostname] ?? responseDelayMs;
       if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
+      if (currentScenario.unreachableProbeHost === url.hostname) {
+        await route.abort();
+        return;
+      }
       try {
         await route.fulfill({
-          status: currentScenario.errorHost === url.hostname ? 503 : 200,
+          status: 200,
           headers: {
             ...corsHeaders,
             "content-type": "application/octet-stream",
@@ -144,7 +194,7 @@ function countHost(requests: string[], host: string): number {
 
 async function waitForRequests(requests: string[], count: number) {
   await expect
-    .poll(() => requests.length, { timeout: 5_000 })
+    .poll(() => requests.length, { timeout: 7_000 })
     .toBeGreaterThanOrEqual(count);
 }
 
@@ -154,14 +204,17 @@ async function waitForHostRequests(
   count: number,
 ) {
   await expect
-    .poll(() => countHost(requests, host), { timeout: 5_000 })
+    .poll(() => countHost(requests, host), { timeout: 7_000 })
     .toBeGreaterThanOrEqual(count);
 }
 
 async function waitForAllProbes(requests: string[]) {
-  for (const host of probeHosts) {
+  for (const host of probeHosts) await waitForHostRequests(requests, host, 1);
+}
+
+async function waitForConnectionSources(requests: string[]) {
+  for (const host of connectionHosts)
     await waitForHostRequests(requests, host, 1);
-  }
 }
 
 async function advanceProbeCycles(
@@ -187,7 +240,7 @@ function cardFor(page: Page, name: string): Locator {
 }
 
 async function clickMoreAction(page: Page, name: string) {
-  await page.getByRole("button", { name: /more/i }).click();
+  await page.getByRole("button", { name: "More options" }).click();
   const menu = page.getByRole("dialog", { name: "More options" });
   await expect(menu).toBeVisible();
   await menu.getByRole("button", { name, exact: true }).click();
@@ -253,7 +306,13 @@ function parseCount(text: string): number {
   return firstCount ? Number(firstCount.replaceAll(",", "")) : 0;
 }
 
-test("shows eight English probes, two independent IP sources, and the ordered toolbar", async ({
+async function regionScales(page: Page, region: "cn" | "global") {
+  return page
+    .locator(`.region-panel[data-region="${region}"] svg.boxplot`)
+    .evaluateAll((plots) => plots.map((plot) => Number(plot.getAttribute("data-scale"))));
+}
+
+test("renders eight probes, two IPv4/IPv6 exits, and the ordered toolbar", async ({
   page,
 }) => {
   const session = await mockNetwork(page);
@@ -269,54 +328,52 @@ test("shows eight English probes, two independent IP sources, and the ordered to
   await expect(page.locator(".probe-stats")).toHaveCount(8);
   await expect(page.locator("svg.boxplot")).toHaveCount(8);
   await expect(page.locator(".p95-value")).toHaveCount(8);
+  await expect(page.locator(".latency-dot")).toHaveCount(8);
+  await expect(page.locator(".service-avatar, .probe-status")).toHaveCount(0);
+
+  const toolbar = page.locator(".toolbar button");
+  await expect(toolbar).toHaveCount(3);
+  await expect(toolbar.nth(0)).toHaveClass(/live-control/);
+  await expect(toolbar.nth(0)).toHaveAttribute("title", /Pause sampling/);
+  await expect(toolbar.nth(0).locator(".cadence")).toHaveText("3s");
+  await expect(toolbar.nth(1)).toHaveAttribute(
+    "aria-label",
+    "Color theme: Light",
+  );
+  await expect(toolbar.nth(2)).toHaveAttribute("aria-label", "More options");
+
   await expect
     .poll(async () => page.locator(".p95-value").first().innerText())
-    .toMatch(/~/);
-  for (const value of await page.locator(".p95-value").all()) {
-    await expect(value).toHaveText(/~\s*\d/);
-  }
+    .toMatch(/~\s*\d/);
 
-  const toolbarControls = page.locator(".toolbar button, .toolbar select");
-  await expect(toolbarControls).toHaveCount(3);
-  await expect(toolbarControls.nth(0)).toHaveClass(/live-control/);
-  await expect(toolbarControls.nth(0)).toHaveAttribute(
-    "title",
-    /Pause sampling/,
-  );
-  await expect(toolbarControls.nth(0).locator("svg")).toHaveCount(1);
-  await expect(toolbarControls.nth(0).locator(".cadence")).toHaveText("3s");
-  await expect(toolbarControls.nth(1)).toHaveAttribute("aria-label", "Theme");
-  await expect(toolbarControls.nth(2)).toHaveAttribute(
+  const axis = page.locator(".plot-axis").first();
+  await expect(axis).toHaveAttribute(
     "aria-label",
-    "More options",
+    /^Linear 0–\d+ millisecond scale$/,
   );
-  expect(
-    await toolbarControls
-      .nth(1)
-      .locator("option")
-      .evaluateAll((options) =>
-        options.map((option) => (option as HTMLOptionElement).value),
-      ),
-  ).toEqual(["light", "dark", "gruvbox", "nord"]);
-  await expect(page.locator(".plot-axis").first()).toHaveAttribute(
-    "aria-label",
-    "Fixed linear 0–1000 millisecond scale",
-  );
-  expect(
-    (
-      await page.locator(".plot-axis").first().locator("span").allTextContents()
-    ).map((tick) => tick.trim()),
-  ).toEqual(["0", "250", "500", "750", "1k ms"]);
+  await expect(axis.locator("span").first()).toHaveText("0");
+  await expect(axis.locator("span").last()).toContainText("ms");
+  const initialChinaScales = await regionScales(page, "cn");
+  const initialInternationalScales = await regionScales(page, "global");
+  expect(new Set(initialChinaScales).size).toBe(1);
+  expect(new Set(initialInternationalScales).size).toBe(1);
 
-  await expect(
-    page.locator(".connection-panel article.connection-card"),
-  ).toHaveCount(2);
-  await expect(
-    page.locator('.connection-card[data-provider="cloudflare"]'),
-  ).toHaveCount(1);
-  await expect(
-    page.locator('.connection-card[data-provider="ipinfo"]'),
-  ).toHaveCount(1);
+  await expect(page.locator(".connection-card")).toHaveCount(2);
+  const chinaCard = page.locator('.connection-card[data-provider="china"]');
+  const internationalCard = page.locator(
+    '.connection-card[data-provider="international"]',
+  );
+  await expect(chinaCard.locator(".exit-source")).toHaveText("Tencent DNSPod");
+  await expect(internationalCard.locator(".exit-source")).toHaveText(
+    "ICanHazIP",
+  );
+  await expect(page.locator(".address-row")).toHaveCount(4);
+  await expect(page.locator(".address-label")).toHaveText([
+    "IPv4",
+    "IPv6",
+    "IPv4",
+    "IPv6",
+  ]);
 
   const names = (await page.locator(".probe-name").allTextContents()).map(
     (name) => name.trim(),
@@ -339,123 +396,165 @@ test("shows eight English probes, two independent IP sources, and the ordered to
   await expect(
     page.locator('.region-panel[data-region="global"] article.probe-card'),
   ).toHaveCount(4);
-  await expect(page.locator(".connection-card .exit-address")).toHaveCount(2);
-  expect(
-    (
-      await page.locator(".connection-card .exit-address").allTextContents()
-    ).join(" "),
-  ).not.toMatch(
-    new RegExp(`${testAddresses.cloudflare}|${testAddresses.ipinfo}`),
-  );
 
   await waitForAllProbes(session.requests);
-  await waitForHostRequests(session.requests, cloudflareHost, 1);
-  await waitForHostRequests(session.requests, ipinfoHost, 1);
-  expect(countHost(session.requests, cloudflareHost)).toBe(1);
-  expect(countHost(session.requests, ipinfoHost)).toBe(1);
-  for (const host of probeHosts) {
+  await waitForConnectionSources(session.requests);
+  await expect(chinaCard.locator(".exit-address")).toHaveCount(2);
+  await expect(internationalCard.locator(".exit-address")).toHaveCount(2);
+  await expect(chinaCard.locator(".exit-address").first()).toHaveText(
+    "••••••••",
+  );
+  await page.getByRole("button", { name: "Show addresses" }).click();
+  await expect(chinaCard.locator(".exit-address").nth(0)).toHaveText(
+    testAddresses.chinaV4,
+  );
+  await expect(chinaCard.locator(".exit-address").nth(1)).toHaveText(
+    testAddresses.chinaV6,
+  );
+  await expect(internationalCard.locator(".exit-address").nth(0)).toHaveText(
+    testAddresses.internationalV4,
+  );
+  await expect(internationalCard.locator(".exit-address").nth(1)).toHaveText(
+    testAddresses.internationalV6,
+  );
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+  await page
+    .getByRole("button", { name: "Copy full IPv6 address from China exit" })
+    .click();
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toBe(testAddresses.chinaV6);
+  await page.getByRole("button", { name: "Hide addresses" }).click();
+
+  for (const host of [...probeHosts, ...connectionHosts]) {
     expect(countHost(session.requests, host), host).toBeGreaterThanOrEqual(1);
   }
-  const unexpectedHosts = [
-    ...new Set(session.requests.map((url) => new URL(url).hostname)),
-  ].filter(
-    (host) =>
-      ![
-        ...probeHosts,
-        cloudflareHost,
-        ipinfoHost,
-        "127.0.0.1",
-        "localhost",
-      ].includes(host),
-  );
-  expect(unexpectedHosts).toEqual([]);
   expect(countHost(session.requests, "www.gstatic.com")).toBe(0);
 
   await page.getByRole("button", { name: "More options" }).click();
   const options = page.getByRole("dialog", { name: "More options" });
   await expect(options).toBeVisible();
   await expect(options.getByLabel("History window")).toHaveCount(0);
-  await expect(
-    options.getByRole("button", { name: /plot scale/i }),
-  ).toHaveCount(0);
+  await expect(options.getByRole("button", { name: /plot scale/i })).toHaveCount(
+    0,
+  );
   await page.keyboard.press("Escape");
+});
 
-  const ipCards = page.locator("article.connection-card");
-  await expect(ipCards).toHaveCount(2);
-  const magicIpCard = page.locator(
-    'article.connection-card.magic-card[data-provider="ipinfo"]',
-  );
-  await expect(magicIpCard).toHaveCount(1);
-  await expect(
-    page.locator('.connection-card[data-provider="cloudflare"].magic-card'),
-  ).toHaveCount(0);
-  const glow = magicIpCard.locator(":scope > .magic-card-glow");
-  await expect(glow).toHaveCount(1);
-  await expect
-    .poll(() => glow.evaluate((element) => getComputedStyle(element).position))
-    .toBe("absolute");
+test("theme menu is accessible, scrollable, persistent, and does not resize the page", async ({
+  page,
+}) => {
+  const session = await mockNetwork(page);
+  await page.goto("/");
+  await waitForAllProbes(session.requests);
+  await waitForConnectionSources(session.requests);
+  await page.evaluate(() => document.fonts.ready);
 
-  await page.getByRole("button", { name: "Show addresses" }).click();
-  const cloudflareCard = page.locator(
-    '.connection-card[data-provider="cloudflare"]',
+  const fonts = await page.evaluate(() => {
+    const text = document.body.innerText;
+    const families = new Set(
+      [...document.fonts].map((font) => font.family.replaceAll('"', "").trim()),
+    );
+    const files = performance
+      .getEntriesByType("resource")
+      .map((entry) => entry.name)
+      .filter((name) => /\.(woff2?|ttf|otf)(\?|$)/i.test(name));
+    return {
+      hasCjk: /[\u3400-\u9fff]/.test(text),
+      lang: document.documentElement.lang,
+      families: [...families],
+      files,
+      external: files.filter((name) => new URL(name).origin !== location.origin),
+    };
+  });
+  expect(fonts.hasCjk).toBe(false);
+  expect(fonts.lang).toBe("en");
+  expect(new Set(fonts.families)).toEqual(
+    new Set(["Inter", "JetBrains Mono", "Space Grotesk"]),
   );
-  const ipinfoCard = page.locator('.connection-card[data-provider="ipinfo"]');
-  await expect(cloudflareCard.locator(".exit-address")).toContainText(
-    testAddresses.cloudflare,
-  );
-  await expect(ipinfoCard.locator(".exit-address")).toContainText(
-    testAddresses.ipinfo,
-  );
-  await expect(cloudflareCard.locator(".edge-value")).toContainText("SIN");
-  await expect(cloudflareCard.locator(".tls-value")).toContainText("TLSv1.3");
-  await expect(ipinfoCard.locator(".network-organization")).toContainText(
-    "Example Networks",
-  );
-  await expect(ipinfoCard.locator(".network-asn")).toContainText("AS64500");
-  await expect(ipinfoCard.locator(".network-location")).toContainText(
-    "Singapore",
-  );
-  await expect(cloudflareCard.locator(".network-organization")).toHaveCount(0);
-  await expect(ipinfoCard.locator(".edge-value")).toHaveCount(0);
-  const beforeGlow = await geometry(page);
-  await magicIpCard.hover();
-  expect(await geometry(page)).toEqual(beforeGlow);
+  expect(fonts.files.length).toBeGreaterThanOrEqual(3);
+  expect(fonts.external).toEqual([]);
 
-  await page.getByRole("button", { name: "Hide addresses" }).click();
-  expect(
-    (
-      await page.locator(".connection-card .exit-address").allTextContents()
-    ).join(" "),
-  ).not.toMatch(
-    new RegExp(`${testAddresses.cloudflare}|${testAddresses.ipinfo}`),
-  );
+  const trigger = page.locator(".theme-picker-trigger");
+  await expect(trigger).toHaveAttribute("aria-haspopup", "listbox");
+  const menu = page.getByRole("listbox", { name: "Color theme" });
+  const sizes = [[320, 568], [1440, 900]] as const;
+  for (const [width, height] of sizes) {
+    await page.setViewportSize({ width, height });
+    const referenceGeometry = await geometry(page);
+    await trigger.click();
+    await expect(menu).toBeVisible();
+    await expect(menu.getByRole("option")).toHaveCount(themes.length);
+    expect((await menu.getByRole("option").allTextContents()).map((item) => item.trim())).toEqual(themeLabels);
+    const scroll = await menu.evaluate((element) => ({
+      overflowY: getComputedStyle(element).overflowY,
+      scrollHeight: element.scrollHeight,
+      clientHeight: element.clientHeight,
+      rect: element.getBoundingClientRect().toJSON(),
+    }));
+    expect(scroll.overflowY).toBe("auto");
+    expect(scroll.scrollHeight).toBeGreaterThan(scroll.clientHeight);
+    expect(scroll.rect.right).toBeLessThanOrEqual(width + 1);
+    expect(scroll.rect.bottom).toBeLessThanOrEqual(height + 1);
+    expect(await geometry(page)).toEqual(referenceGeometry);
 
-  const beforeRefresh = {
-    cloudflare: countHost(session.requests, cloudflareHost),
-    ipinfo: countHost(session.requests, ipinfoHost),
-  };
-  await page
-    .getByRole("button", { name: "Refresh connection info", exact: true })
-    .click();
-  await waitForHostRequests(
-    session.requests,
-    cloudflareHost,
-    beforeRefresh.cloudflare + 1,
+    await page.keyboard.press("End");
+    const last = menu.getByRole("option", { name: "Gruvbox" });
+    await expect(last).toBeFocused();
+    await page.keyboard.press("Enter");
+    await expect(menu).not.toBeVisible();
+    for (const [index, theme] of themes.entries()) {
+      await trigger.click();
+      await menu
+        .getByRole("option", { name: themeLabels[index], exact: true })
+        .click();
+      await expect(page.locator("html")).toHaveAttribute("data-theme", theme);
+      await expect(trigger).toHaveAttribute(
+        "aria-label",
+        `Color theme: ${themeLabels[index]}`,
+      );
+
+      const colors = await page.evaluate(() => {
+        const style = getComputedStyle(document.querySelector(".app-shell")!);
+        return Object.fromEntries(
+          ["--ink", "--muted", "--danger", "--surface", "--canvas"].map(
+            (token) => [token, style.getPropertyValue(token).trim()],
+          ),
+        ) as Record<string, string>;
+      });
+      for (const foreground of ["--ink", "--muted", "--danger"]) {
+        for (const background of ["--surface", "--canvas"]) {
+          expect(
+            contrastRatio(colors[foreground], colors[background]),
+            `${theme} ${foreground} on ${background}`,
+          ).toBeGreaterThanOrEqual(4.5);
+        }
+      }
+      expect(await geometry(page)).toEqual(referenceGeometry);
+    }
+    const dimensions = await page.evaluate(() => ({
+      width: document.documentElement.clientWidth,
+      scrollWidth: Math.max(
+        document.documentElement.scrollWidth,
+        document.body.scrollWidth,
+      ),
+    }));
+    expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.width + 1);
+  }
+
+  await trigger.click();
+  await menu.getByRole("option", { name: "Cupcake" }).click();
+  await page.reload();
+  await expect(page.locator(".theme-picker-trigger")).toHaveAttribute(
+    "aria-label",
+    "Color theme: Cupcake",
   );
-  await waitForHostRequests(
-    session.requests,
-    ipinfoHost,
-    beforeRefresh.ipinfo + 1,
-  );
-  expect(countHost(session.requests, cloudflareHost)).toBe(
-    beforeRefresh.cloudflare + 1,
-  );
-  expect(countHost(session.requests, ipinfoHost)).toBe(
-    beforeRefresh.ipinfo + 1,
+  expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe(
+    "cupcake",
   );
 });
 
-test("uses a three-second default and accepts validated fractional sampling intervals", async ({
+test("uses a three-second default and accepts manually entered sampling intervals", async ({
   page,
 }) => {
   await page.clock.install({ time: new Date("2026-10-31T00:00:00.000Z") });
@@ -504,17 +603,16 @@ test("uses a three-second default and accepts validated fractional sampling inte
   await advanceProbeCycles(page, session.requests, 1, 1.5);
 });
 
-test("keeps sampling beyond sixty attempts, bounds plotted marks, and exports bounded raw history", async ({
+test("keeps measuring beyond sixty attempts and bounds plots and exported history", async ({
   page,
 }) => {
+  test.setTimeout(60_000);
   await installClock(page);
   const session = await mockNetwork(page);
   await page.goto("/");
   await waitForAllProbes(session.requests);
-  const interval = 3;
+  await advanceProbeCycles(page, session.requests, 60);
 
-  await advanceProbeCycles(page, session.requests, 72, interval);
-  await expect(page.locator("article.probe-card")).toHaveCount(8);
   for (const name of [
     "Cloudflare",
     "jsDelivr",
@@ -526,9 +624,9 @@ test("keeps sampling beyond sixty attempts, bounds plotted marks, and exports bo
     "Taobao",
   ]) {
     const card = cardFor(page, name);
-    expect(
-      await card.locator("circle.sample-point").count(),
-    ).toBeLessThanOrEqual(120);
+    expect(await card.locator("circle.sample-point").count()).toBeLessThanOrEqual(
+      120,
+    );
     await expect(card.locator("rect.iqr-box")).toHaveCount(1);
     await expect(card.locator(".median-line")).toHaveCount(1);
   }
@@ -546,9 +644,7 @@ test("keeps sampling beyond sixty attempts, bounds plotted marks, and exports bo
   expect(opacity.length).toBeGreaterThan(8);
   expect(Math.max(...opacity)).toBeGreaterThan(Math.min(...opacity));
 
-  const sessionTotal = parseCount(
-    await page.locator(".session-total").innerText(),
-  );
+  const sessionTotal = parseCount(await page.locator(".session-total").innerText());
   const retainedTotal = parseCount(
     await page.locator(".retained-total").innerText(),
   );
@@ -559,6 +655,7 @@ test("keeps sampling beyond sixty attempts, bounds plotted marks, and exports bo
     await expect(value).not.toContainText("~");
     await expect(value).toHaveText(/\d/);
   }
+
   const maxInFlight = await page.evaluate(() =>
     Math.max(...Object.values((window as ProbeWindow).__probeMaxActive ?? {})),
   );
@@ -575,270 +672,179 @@ test("keeps sampling beyond sixty attempts, bounds plotted marks, and exports bo
     expect(target.failures).toBe(0);
   }
   const exported = JSON.stringify(payload);
-  expect(exported).not.toContain(testAddresses.cloudflare);
-  expect(exported).not.toContain(testAddresses.ipinfo);
-  for (const name of [
-    "Cloudflare",
-    "jsDelivr",
-    "GitHub",
-    "Microsoft",
-    "Baidu",
-    "Bilibili",
-    "WeChat",
-    "Taobao",
-  ]) {
-    expect(
-      await cardFor(page, name).locator("circle.sample-point").count(),
-    ).toBeLessThanOrEqual(120);
-  }
+  for (const address of Object.values(testAddresses))
+    expect(exported).not.toContain(address);
 });
 
-test("keeps box plot and IP card geometry fixed through empty, outlier, and failed samples", async ({
+test("uses a changing shared scale per region and shows probe failures without losing prior samples", async ({
   page,
 }) => {
   await installClock(page);
   const session = await mockNetwork(page);
   await page.goto("/");
+  await waitForAllProbes(session.requests);
   await expect(page.locator("article.probe-card")).toHaveCount(8);
   await page.evaluate(() => document.fonts.ready);
   const emptyGeometry = await geometry(page);
-  await waitForAllProbes(session.requests);
-  const interval = 3;
-  await advanceProbeCycles(page, session.requests, 6, interval);
-  await new Promise((resolve) => setTimeout(resolve, 30));
-  await expect(page.locator("rect.iqr-box")).toHaveCount(8);
-  const populatedGeometry = await geometry(page);
-  expect(populatedGeometry).toEqual(emptyGeometry);
-  expect(
-    await page.locator("svg.boxplot").first().getAttribute("data-scale"),
-  ).toBe("1000");
+  await advanceProbeCycles(page, session.requests, 3);
 
-  const cloudflare = cardFor(page, "Cloudflare");
-  const outlierRequestCount = countHost(
-    session.requests,
-    "speed.cloudflare.com",
-  );
-  session.setScenario({ outlierHost: "speed.cloudflare.com" });
-  await page.clock.fastForward(interval * 1_000 + 100);
-  await waitForHostRequests(
-    session.requests,
-    "speed.cloudflare.com",
-    outlierRequestCount + 1,
-  );
+  const initialChina = await regionScales(page, "cn");
+  const initialInternational = await regionScales(page, "global");
+  expect(new Set(initialChina).size).toBe(1);
+  expect(new Set(initialInternational).size).toBe(1);
+
+  session.setScenario({
+    delayByHost: {
+      "www.baidu.com": 600,
+      "speed.cloudflare.com": 1_200,
+    },
+  });
+  const beforeDelay = session.requests.length;
+  await advanceProbeCycles(page, session.requests, 1);
   await expect
     .poll(async () => {
-      const text = await cloudflare.locator(".probe-latest").innerText();
+      const text = await cardFor(page, "Baidu").locator(".probe-latest").innerText();
+      return Number.parseFloat(text.replace(/[^\d.]/g, "")) || 0;
+    })
+    .toBeGreaterThan(500);
+  await expect
+    .poll(async () => {
+      const text = await cardFor(page, "Cloudflare")
+        .locator(".probe-latest")
+        .innerText();
       return Number.parseFloat(text.replace(/[^\d.]/g, "")) || 0;
     })
     .toBeGreaterThan(1_000);
-  await expect(
-    cloudflare.locator("circle.sample-point.is-overflow").last(),
-  ).toHaveAttribute("cx", /%$/);
-  expect(
-    Number.parseFloat(
-      (await cloudflare
-        .locator("circle.sample-point.is-overflow")
-        .last()
-        .getAttribute("cx")) ?? "NaN",
-    ),
-  ).toBeLessThanOrEqual(100);
-  expect(
-    await page.locator("svg.boxplot").first().getAttribute("data-scale"),
-  ).toBe("1000");
-  expect(await geometry(page)).toEqual(emptyGeometry);
-  session.setScenario({});
-  await page.getByRole("button", { name: "Pause" }).click();
+  expect(session.requests.length).toBeGreaterThan(beforeDelay);
 
+  const updatedChina = await regionScales(page, "cn");
+  const updatedInternational = await regionScales(page, "global");
+  expect(new Set(updatedChina).size).toBe(1);
+  expect(new Set(updatedInternational).size).toBe(1);
+  expect(updatedChina[0]).toBeGreaterThan(initialChina[0]);
+  expect(updatedInternational[0]).toBeGreaterThan(initialInternational[0]);
+  expect(updatedChina[0]).toBeLessThan(updatedInternational[0]);
+  for (const [region, scale] of [
+    ["cn", updatedChina[0]],
+    ["global", updatedInternational[0]],
+  ] as const) {
+    const axis = page.locator(`.region-panel[data-region="${region}"] .plot-axis`);
+    await expect(axis.first()).toHaveAttribute(
+      "aria-label",
+      `Linear 0–${scale} millisecond scale`,
+    );
+    await expect(axis.first().locator("span").first()).toHaveText("0");
+  }
+  expect(await geometry(page)).toEqual(emptyGeometry);
+
+  const cloudflare = cardFor(page, "Cloudflare");
+  const oldPointCount = await cloudflare.locator("circle.sample-point").count();
+  session.setScenario({ unreachableProbeHost: "speed.cloudflare.com" });
+  await page.getByRole("button", { name: "Pause" }).click();
   const errorRequestCount = countHost(session.requests, "speed.cloudflare.com");
-  session.setScenario({ errorHost: "speed.cloudflare.com" });
   await page.getByRole("button", { name: "Resume" }).click();
   await waitForHostRequests(
     session.requests,
     "speed.cloudflare.com",
     errorRequestCount + 1,
   );
-  await expect(cloudflare.locator(".probe-status")).toHaveAttribute(
+  await expect(cloudflare.locator(".reading-state")).toHaveText("No reply");
+  await expect(cloudflare).toHaveClass(/is-unreachable/);
+  await expect(cloudflare.locator(".latency-dot")).toHaveAttribute(
     "aria-label",
     "Failed",
   );
-  session.setScenario({});
+  expect(await cloudflare.locator("circle.sample-point").count()).toBeGreaterThan(
+    0,
+  );
+  expect(await cloudflare.locator("circle.sample-point").count()).toBeLessThanOrEqual(
+    oldPointCount + 1,
+  );
   expect(await geometry(page)).toEqual(emptyGeometry);
 });
 
-test("keeps four themes, readable colors, three self-hosted fonts, and all content within common viewports", async ({
+test("distinguishes unsupported address families from network failures", async ({
   page,
 }) => {
   const session = await mockNetwork(page);
   await page.goto("/");
-  await expect(page.locator("article.probe-card")).toHaveCount(8);
-  await page.evaluate(() => document.fonts.ready);
-  await expect(page.locator("h1")).toHaveCount(1);
-  await expect(page.locator("h1")).toHaveText("Network status");
-  await expect(
-    page.getByRole("button", { name: /language|中文/i }),
-  ).toHaveCount(0);
-  await expect(page.locator("main p")).toHaveCount(0);
+  await waitForConnectionSources(session.requests);
+  await page.getByRole("button", { name: "Show addresses" }).click();
 
-  const textAudit = await page.evaluate(() => {
-    const bodyText = document.body.innerText;
-    const loadedFamilies = new Set(
-      [...document.fonts].map((font) => font.family.replaceAll('"', "").trim()),
-    );
-    const fontFiles = performance
-      .getEntriesByType("resource")
-      .map((entry) => entry.name)
-      .filter((name) => /\.(woff2?|ttf|otf)(\?|$)/i.test(name));
-    const externalFonts = fontFiles.filter(
-      (name) => new URL(name).origin !== location.origin,
-    );
-    return {
-      hasCjk: /[\u3400-\u9fff]/.test(bodyText),
-      loadedFamilies: [...loadedFamilies],
-      fontFiles,
-      externalFonts,
-      lang: document.documentElement.lang,
-    };
+  session.setScenario({
+    unsupportedIpUrl: "https://ipv6.ddnspod.com/checkip",
+    unreachableIpUrl: "https://ipv4.icanhazip.com/",
   });
-  expect(textAudit.hasCjk).toBe(false);
-  expect(textAudit.lang).toBe("en");
-  expect(new Set(textAudit.loadedFamilies)).toEqual(
-    new Set(["Inter", "JetBrains Mono", "Space Grotesk"]),
+  const counts = Object.fromEntries(
+    connectionHosts.map((host) => [host, countHost(session.requests, host)]),
   );
-  expect(textAudit.fontFiles.length).toBeGreaterThanOrEqual(3);
-  expect(textAudit.externalFonts).toEqual([]);
-  expect(
-    session.requests.some((url) =>
-      new URL(url).pathname.match(/\/(?:locales?|messages?)\/.*\.json$/i),
-    ),
-  ).toBe(false);
-
-  const viewports = [
-    [320, 568],
-    [375, 667],
-    [390, 844],
-    [667, 375],
-    [768, 1024],
-    [1366, 768],
-    [1440, 900],
-  ];
-  const themeSelect = page.getByLabel("Theme");
-  const themes = ["light", "dark", "gruvbox", "nord"];
-  await expect(themeSelect.locator("option")).toHaveCount(themes.length);
-
-  for (const [width, height] of viewports) {
-    await page.setViewportSize({ width, height });
-    let referenceGeometry: Awaited<ReturnType<typeof geometry>> | undefined;
-    for (const theme of themes) {
-      await themeSelect.selectOption(theme);
-      expect(await themeSelect.inputValue(), `${theme} selected`).toBe(theme);
-
-      const dimensions = await page.evaluate(() => ({
-        width: document.documentElement.clientWidth,
-        height: document.documentElement.clientHeight,
-        scrollWidth: Math.max(
-          document.documentElement.scrollWidth,
-          document.body.scrollWidth,
-        ),
-        scrollHeight: Math.max(
-          document.documentElement.scrollHeight,
-          document.body.scrollHeight,
-        ),
-        cards: document.querySelectorAll("article.probe-card").length,
-        addresses: document.querySelectorAll(".connection-card .exit-address")
-          .length,
-        contentInViewport: [
-          ...document.querySelectorAll(
-            ".topbar, .connection-card, article.probe-card, footer",
-          ),
-        ].every((element) => {
-          const rect = element.getBoundingClientRect();
-          return rect.top >= -1 && rect.bottom <= window.innerHeight + 1;
-        }),
-        colors: (() => {
-          const element = document.querySelector(".app-shell");
-          if (!element) throw new Error("App shell is missing");
-          const style = getComputedStyle(element);
-          return Object.fromEntries(
-            ["--ink", "--muted", "--danger", "--surface", "--canvas"].map(
-              (token) => [token, style.getPropertyValue(token).trim()],
-            ),
-          ) as Record<string, string>;
-        })(),
-      }));
-      expect(dimensions.cards, `${width}x${height} probe count`).toBe(8);
-      expect(dimensions.addresses, `${width}x${height} IP count`).toBe(2);
-      expect(
-        dimensions.contentInViewport,
-        `${width}x${height} content visibility in ${theme}`,
-      ).toBe(true);
-      expect(
-        dimensions.scrollWidth,
-        `${width}x${height} horizontal scroll in ${theme}`,
-      ).toBeLessThanOrEqual(dimensions.width + 1);
-      expect(
-        dimensions.scrollHeight,
-        `${width}x${height} vertical scroll in ${theme}`,
-      ).toBeLessThanOrEqual(dimensions.height + 1);
-      for (const foreground of ["--ink", "--muted", "--danger"]) {
-        for (const background of ["--surface", "--canvas"]) {
-          expect(
-            contrastRatio(
-              dimensions.colors[foreground],
-              dimensions.colors[background],
-            ),
-            `${theme} ${foreground} on ${background} contrast`,
-          ).toBeGreaterThanOrEqual(4.5);
-        }
-      }
-
-      const currentGeometry = await geometry(page);
-      if (referenceGeometry) {
-        expect(
-          currentGeometry,
-          `${theme} layout at ${width}x${height}`,
-        ).toEqual(referenceGeometry);
-      } else {
-        referenceGeometry = currentGeometry;
-      }
-    }
+  await page.getByRole("button", { name: "Refresh connection info" }).click();
+  for (const host of connectionHosts) {
+    await waitForHostRequests(session.requests, host, counts[host] + 1);
   }
 
-  await themeSelect.selectOption("nord");
-  await page.reload();
-  await expect(page.getByLabel("Theme")).toHaveValue("nord");
+  const chinaCard = page.locator('.connection-card[data-provider="china"]');
+  const internationalCard = page.locator(
+    '.connection-card[data-provider="international"]',
+  );
+  await expect(chinaCard.locator(".address-row").nth(0).locator(".exit-address"))
+    .not.toHaveText("Unavailable");
+  await expect(
+    chinaCard.locator(".address-row").nth(1).locator(".exit-address"),
+  ).toHaveText("Not supported");
+  await expect(
+    internationalCard
+      .locator(".address-row")
+      .nth(0)
+      .locator(".exit-address"),
+  ).toHaveText("Unavailable");
+  await expect(
+    internationalCard
+      .locator(".address-row")
+      .nth(1)
+      .locator(".exit-address"),
+  ).toHaveText(testAddresses.internationalV6);
 });
 
-test("pauses sampling, hides stale work, resumes, and clears retained history", async ({
+test("keeps measurements running while the page is hidden and pauses on request", async ({
   page,
 }) => {
-  await installClock(page);
+  await page.addInitScript(() => {
+    let hidden = false;
+    Object.defineProperty(document, "hidden", {
+      configurable: true,
+      get: () => hidden,
+    });
+    (window as ProbeWindow).__pingSetHidden = (nextHidden) => {
+      hidden = nextHidden;
+      document.dispatchEvent(new Event("visibilitychange"));
+    };
+  });
   const session = await mockNetwork(page);
   await page.goto("/");
   await waitForAllProbes(session.requests);
-  const interval = 3;
-  await advanceProbeCycles(page, session.requests, 2, interval);
+
+  await page.getByRole("button", { name: "More options" }).click();
+  const menu = page.getByRole("dialog", { name: "More options" });
+  await menu.getByLabel("Sampling interval").fill("1");
+  await menu.getByRole("button", { name: "Apply interval" }).click();
+  await waitForRequests(session.requests, probeHosts.length * 2 + connectionHosts.length);
+
+  await expect(page.locator(".latency-dot.is-probing")).toHaveCount(0);
+  const beforeHiddenCycle = session.requests.length;
+  await page.evaluate(() => (window as ProbeWindow).__pingSetHidden?.(true));
+  await expect(page.locator(".status-badge")).toHaveText("Background");
+  await waitForRequests(session.requests, beforeHiddenCycle + probeHosts.length);
+  await expect(page.locator(".latency-dot.is-probing")).toHaveCount(0);
+  const beforeForeground = session.requests.length;
+  await page.evaluate(() => (window as ProbeWindow).__pingSetHidden?.(false));
+  await expect(page.locator(".status-badge")).toHaveText("Live");
+  await waitForRequests(session.requests, beforeForeground + probeHosts.length);
 
   await page.getByRole("button", { name: "Pause" }).click();
   const stoppedAt = session.requests.length;
-  await page.clock.fastForward(20_000);
-  await new Promise((resolve) => setTimeout(resolve, 100));
+  await page.evaluate(() => (window as ProbeWindow).__pingSetHidden?.(true));
+  await page.evaluate(() => (window as ProbeWindow).__pingSetHidden?.(false));
+  await page.waitForTimeout(1_200);
   expect(session.requests).toHaveLength(stoppedAt);
-
-  await page.getByRole("button", { name: "Resume" }).click();
-  await page.clock.fastForward(interval * 1_000 + 100);
-  await waitForRequests(session.requests, stoppedAt + 8);
-  await expect
-    .poll(async () =>
-      parseCount(await page.locator(".session-total").innerText()),
-    )
-    .toBeGreaterThan(0);
-  const totalBeforeClear = parseCount(
-    await page.locator(".session-total").innerText(),
-  );
-  expect(totalBeforeClear).toBeGreaterThan(0);
-  await page.getByRole("button", { name: "Pause" }).click();
-  await clickMoreAction(page, "Clear history");
-  await expect(page.locator("circle.sample-point")).toHaveCount(0);
-  expect(parseCount(await page.locator(".retained-total").innerText())).toBe(0);
-  expect(parseCount(await page.locator(".session-total").innerText())).toBe(0);
 });

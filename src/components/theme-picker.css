@@ -1,0 +1,121 @@
+.theme-picker {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.theme-picker-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 7px;
+  padding: 0 9px;
+  font:
+    10px "JetBrains Mono",
+    monospace;
+  text-align: left;
+}
+
+.theme-picker-trigger:hover {
+  background: var(--neutral-soft);
+}
+
+.theme-picker-trigger > svg {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+
+.theme-picker-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theme-swatch,
+.theme-option-swatch {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  border: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
+  border-radius: 4px;
+  background: linear-gradient(
+    135deg,
+    var(--accent) 0 50%,
+    var(--surface-raised) 50%
+  );
+}
+
+.theme-picker-list {
+  position: absolute;
+  z-index: 60;
+  top: calc(100% + 7px);
+  right: 0;
+  width: 208px;
+  max-height: min(68dvh, 424px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow:
+    var(--shadow),
+    0 4px 14px var(--menu-backdrop);
+  scrollbar-width: thin;
+  scrollbar-color: var(--muted) transparent;
+}
+
+.theme-picker-option {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) 16px;
+  align-items: center;
+  width: 100%;
+  min-height: 44px;
+  gap: 9px;
+  padding: 5px 9px;
+  border-radius: 7px;
+  background: var(--canvas);
+  color: var(--ink);
+  font:
+    11px Inter,
+    sans-serif;
+  text-align: left;
+  cursor: pointer;
+}
+
+.theme-picker-option + .theme-picker-option {
+  margin-top: 3px;
+}
+
+.theme-picker-option:hover,
+.theme-picker-option:focus-visible {
+  background: var(--surface-raised);
+}
+
+.theme-picker-option:focus-visible {
+  outline: 2px solid var(--accent-line);
+  outline-offset: -2px;
+}
+
+.theme-option-swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+}
+
+.theme-option-check {
+  justify-self: end;
+  color: var(--accent);
+}
+
+@media (max-width: 520px) {
+  .theme-picker-list {
+    width: 196px;
+    max-height: min(68dvh, 380px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .theme-picker-list {
+    scroll-behavior: auto;
+  }
+}

@@ -1,12 +1,15 @@
 # Ping themes
 
-Ping includes four fixed palettes: **Light**, **Dark**, **Gruvbox**, and **Nord**. The small set keeps theme choice quick while covering a bright default, a neutral dark mode, a warm dark palette, and a cool dark palette. The selector changes colors only; layout and chart bounds stay fixed.
+The header opens a scrollable, keyboard-accessible listbox with 15 palettes:
+Light, Dark, Light neutral, Dark neutral, Halloween, Forest, Dracula, Night,
+Dim, Nord, Sunset, Abyss, Cupcake, Dark daisyUI 5, and Gruvbox. Each row previews
+its own palette with a swatch; selecting one changes colors without moving or
+resizing the page. The selector follows the style of the supplied zashboard
+reference. The palette set draws on [daisyUI themes](https://daisyui.com/docs/themes/)
+and adds Gruvbox.
 
-The theme approach takes inspiration from the curated [zashboard theme list](https://github.com/Zephyruso/zashboard/blob/main/src/constant/index.ts), which includes Light, Dark, Nord, and other palettes. Ping's Gruvbox and Nord colors are adaptations of the public [Gruvbox](https://github.com/morhetz/gruvbox/blob/master/colors/gruvbox.vim) and [Nord](https://github.com/nordtheme/nord/blob/develop/src/nord.css) palettes, tuned where needed for readable UI states. Ping does not use their logos or other brand assets.
-
-## Tokens
-
-All colors used for page surfaces, text, status, borders, and charts should come from `src/themes.css`:
+Use semantic tokens from `src/themes.css` for page surfaces, text, status, and
+plots:
 
 | Token | Use |
 | --- | --- |
@@ -14,14 +17,21 @@ All colors used for page surfaces, text, status, borders, and charts should come
 | `--surface`, `--surface-raised` | Cards, controls, and menus |
 | `--ink`, `--muted` | Primary and secondary text |
 | `--line` | Decorative separators |
-| `--accent`, `--accent-ink`, `--accent-soft`, `--accent-line` | Selection, focus, and highlighted UI; use `--accent-ink` for text on solid accent fills |
-| `--success`, `--warning`, `--danger` | Status and measurement states |
-| `--grid`, `--chart-fill`, `--point` | Plot grid, distribution fill, and samples |
-| `--shadow`, `--menu-backdrop` | Elevation and modal dimming |
-| `--neutral-soft` | Quiet secondary surface |
+| `--accent`, `--accent-ink`, `--accent-soft`, `--accent-line` | Selection, focus, and highlighted UI |
+| `--success`, `--warning`, `--danger` | Status and failures |
+| `--latency-good`, `--latency-mid`, `--latency-bad` | Probe dot from green through amber to red |
+| `--grid`, `--chart-fill`, `--point` | Plot grid, box, and samples |
+| `--shadow`, `--menu-backdrop`, `--neutral-soft` | Elevation and quiet surfaces |
 
-The theme is selected with `data-theme="light"`, `"dark"`, `"gruvbox"`, or `"nord"` on the document root. Light is the default. Each palette declares its native `color-scheme` for browser controls.
+The selected palette is stored as `data-theme` on the document root and in local
+storage. Light is the default; browser controls receive each palette's native
+`color-scheme`. App typography was contrast-checked in Light, Dark, and Gruvbox;
+the menu's theme-specific text measured 10.75:1–16.09:1 across all 15 rows. See
+[WCAG 2.2 Contrast Minimum](https://www.w3.org/TR/WCAG22/#contrast-minimum).
 
-## Contrast
+## Sources
 
-Colors were checked with the WCAG relative-luminance contrast formula. Primary text, muted text, accent text, and success/warning/danger status colors each meet at least **4.5:1** against the canvas, card, and raised surfaces in all four palettes. The weakest checked pair is Gruvbox warning on its raised surface at about **4.59:1**. Accent outlines meet at least **3:1** against raised surfaces; ordinary separator and grid lines are decorative and are not used as the only signal for state or chart values. See [WCAG 2.2, Contrast Minimum](https://www.w3.org/TR/WCAG22/#contrast-minimum).
+- [zashboard theme selector](https://github.com/Zephyruso/zashboard/blob/main/src/components/settings/general/ThemeSelector.vue)
+- [daisyUI theme list](https://daisyui.com/docs/themes/)
+- [Gruvbox palette](https://github.com/morhetz/gruvbox/blob/master/colors/gruvbox.vim)
+- [Nord palette](https://github.com/nordtheme/nord/blob/develop/src/nord.css)
