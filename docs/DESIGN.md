@@ -10,17 +10,17 @@ The information hierarchy draws on [cf.090227.xyz's network page](https://cf.090
 
 | Area | Information and behavior |
 | --- | --- |
-| Header | Ping mark and “Network status”, followed by an animated send/receive control with cadence, a custom 15-theme listbox, and More options. There is no slogan or introductory paragraph. |
-| Connection panel | Equal Mainland and International cards show IPv4 and IPv6 from Tencent DNSPod and Cloudflare's ICanHazIP endpoint. Addresses start masked, can be revealed and copied, and refresh manually. |
+| Header | Ping mark and “Network status”, followed by two matching icon buttons: a 15-theme listbox and More options. Theme changes use a short Magic UI-inspired circle reveal, with reduced-motion and unsupported-browser fallbacks. There is no slogan or introductory paragraph. |
+| Connection panel | Equal Mainland and International cards show IPv4 and IPv6 from Tencent DNSPod and Cloudflare's ICanHazIP endpoint. Addresses start visible, can be hidden or copied, and refresh manually. Location, network and time zone describe the explicitly identified IPv4 address (or IPv6 when IPv4 is unavailable). |
 | Probe groups | Mainland China and International, four fixed cards each. A card shows service, endpoint host, latest reading or failure state, a latency-colored activity dot, horizontal box plot and samples, P50/P95/jitter, and attempt counts. |
-| Session footer | Session duration, lifetime checks, retained sample count/cap, and failed attempts. Counters continue after the raw-history cap is reached. |
+| Session footer | A bottom status bar shows session duration, cumulative measurements and failures on the left, plus animated Live/pause and cadence on the right. Internal history capacity is not displayed. Sampling continues after the memory cap is reached. |
 | More options | Set an interval from 1 to 300 seconds (decimals allowed), export data, clear the session, or open GitHub. Connection information is refreshed from its panel button. There are no history-window or plot-scale selectors. |
 
 The live/pause control is the only direct sampling toggle. The selected theme and interval are saved in browser local storage; samples remain in page memory only.
 
 ## Probe and measurement model
 
-All probes run from the visitor's browser. Each target is sampled independently, with a default 3-second interval and no more than one in-flight request per target. A cache-busting query and `cache: no-store` avoid reusing a cached response. `performance.now()` measures elapsed fetch time until a response is available to the browser. A request is aborted after 4.5 seconds. User pause and offline state stop sampling. Hidden-tab sampling is best effort: browsers may throttle or suspend timers. When the page becomes visible, a fresh round starts immediately; Ping does not replay missed intervals.
+All probes run from the visitor's browser. Each target discards its first completed request as warm-up once per session; pause/resume, visibility changes and interval changes do not repeat warm-up. Clear history starts a new warm-up. Each target is sampled independently, with a default 3-second interval and no more than one in-flight request per target. A cache-busting query and `cache: no-store` avoid reusing a cached response. `performance.now()` measures elapsed fetch time until a response is available to the browser. A request is aborted after 4.5 seconds. User pause and offline state stop sampling. Hidden-tab sampling is best effort: browsers may throttle or suspend timers. When the page becomes visible, a fresh round starts immediately; Ping does not replay missed intervals.
 
 Cloudflare and jsDelivr use CORS, so the browser can inspect and classify their HTTP status. The other six targets use opaque `no-cors` responses: Ping can time a response but cannot inspect its status, and labels those readings “HTTP unverified.” A non-success CORS response, timeout, or rejected fetch counts as a failure. A response time attached to a non-success status is not a valid latency reading.
 
@@ -39,7 +39,7 @@ These are public HTTP endpoints rather than contractual probe APIs. The pinned j
 
 ## Box plot and statistics
 
-Every probe uses a fixed-size horizontal Tukey box plot. Each region's four probes share a linear range: the right bound is the largest per-probe P95 in that region with 20% headroom, rounded up to a nice tick; it has a 50 ms minimum and defaults to 100 ms before valid readings. Three ticks show zero, midpoint, and right bound. Q1 and Q3 delimit the box, the median is its center line, and whiskers reach the most extreme observations within the 1.5 × IQR fences. Quartiles use linear interpolation over sorted values. The box and whiskers appear after five valid measurements. Individual sample points remain visible, including outliers. Points beyond the current range stay clipped to the boundary and are indicated separately; the card and plot frame keep fixed dimensions as the shared range changes.
+Every probe uses a fixed-size horizontal Tukey box plot. Each region's four probes share a linear range: the right bound is the smallest multiple of 100 ms not below the largest per-probe P95 in that region; it has a 100 ms minimum and defaults to 100 ms before valid readings. Three ticks show zero, midpoint, and right bound. Q1 and Q3 delimit the box, the median is its center line, and whiskers reach the most extreme observations within the 1.5 × IQR fences. Quartiles use linear interpolation over sorted values. The box and whiskers appear after five valid measurements. Individual sample points remain visible, including outliers. Points beyond the current range stay clipped to the boundary and are indicated separately; the card and plot frame keep fixed dimensions as the shared range changes.
 
 All statistics use valid samples from the fixed trailing 30-minute window:
 
@@ -63,7 +63,7 @@ History is session-only: it is not written to local storage or sent to a Ping se
 
 ## Connection information and API limits
 
-At startup and on manual refresh, Ping makes four direct no-key lookups: Tencent DNSPod's IPv4 and IPv6 check endpoints, and Cloudflare's ICanHazIP IPv4 and IPv6 endpoints. Each returns a plain-text address; cards keep the two route results separate. Addresses start masked and can be copied when revealed. Explicit HTTP 501 means unsupported; other HTTP and browser network errors are unavailable because fetch cannot distinguish missing family support from DNS or CORS failures. The requests expose the visitor's source address to each provider and are not proxied or stored by Ping. The sources and observed Mainland route are documented in [IP.md](IP.md).
+At startup and on manual refresh, Ping makes four direct no-key lookups: Tencent DNSPod's IPv4 and IPv6 check endpoints, and Cloudflare's ICanHazIP IPv4 and IPv6 endpoints. Each returns a plain-text address; cards keep the two route results separate. Addresses start visible and can be hidden or copied. IPinfo enriches one observed address per source (IPv4 preferred) with location, network and time zone; lookup errors never block address display or measurements. Explicit HTTP 501 means unsupported; other HTTP and browser network errors are unavailable because fetch cannot distinguish missing family support from DNS or CORS failures. The requests expose the visitor's source address to each provider and are not proxied or stored by Ping. The sources and observed Mainland route are documented in [IP.md](IP.md).
 
 ## Device and visual system
 

@@ -133,3 +133,87 @@ export async function fetchConnectionInfo(
 
   return { china, international };
 }
+
+export type LocationResult = {
+  status: "ok" | "unavailable";
+  family?: "ipv4" | "ipv6";
+  location?: string;
+  network?: string;
+  timezone?: string;
+};
+export type LocationReport = Partial<
+  Record<keyof ConnectionReport, LocationResult>
+>;
+
+/** Enrich the actual observed address, once per refresh, outside the probe loop. */
+export async function fetchLocationInfo(
+  report: ConnectionReport,
+  signal?: AbortSignal,
+): Promise<LocationReport> {
+  const requests = new Map<string, Promise<LocationResult>>();
+  const lookup = async (
+    ip: string,
+    family: "ipv4" | "ipv6",
+  ): Promise<LocationResult> => {
+    if (signal?.aborted) throw abortReason(signal);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    const cancel = () => controller.abort(signal?.reason);
+    signal?.addEventListener("abort", cancel, { once: true });
+    try {
+      const response = await fetch(
+        `https://ipinfo.io/${encodeURIComponent(ip)}/json`,
+        {
+          mode: "cors",
+          cache: "no-store",
+          credentials: "omit",
+          signal: controller.signal,
+        },
+      );
+      if (!response.ok) return { status: "unavailable", family };
+      const data = (await response.json()) as Record<string, unknown>;
+      const normalize = (value: string) =>
+        value.includes(":") ? new URL(`http://[${value}]/`).hostname : value;
+      if (typeof data.ip !== "string" || normalize(data.ip) !== normalize(ip))
+        return { status: "unavailable", family };
+      const string = (key: string) =>
+        typeof data[key] === "string" ? (data[key] as string).trim() : "";
+      const location = [
+        ...new Set(
+          [string("city"), string("region"), string("country")].filter(Boolean),
+        ),
+      ].join(", ");
+      const network = string("org");
+      const timezone = string("timezone");
+      return {
+        status: location || network || timezone ? "ok" : "unavailable",
+        family,
+        location,
+        network,
+        timezone,
+      };
+    } catch {
+      if (signal?.aborted) throw abortReason(signal);
+      return { status: "unavailable", family };
+    } finally {
+      clearTimeout(timeout);
+      signal?.removeEventListener("abort", cancel);
+    }
+  };
+  return Object.fromEntries(
+    await Promise.all(
+      (Object.keys(report) as (keyof ConnectionReport)[]).map(
+        async (region) => {
+          const provider = report[region];
+          const family = provider.ipv4.status === "ok" ? "ipv4" : "ipv6";
+          const address = provider[family];
+          if (address.status !== "ok")
+            return [region, { status: "unavailable" }];
+          if (!requests.has(address.ip))
+            requests.set(address.ip, lookup(address.ip, family));
+          return [region, await requests.get(address.ip)!];
+        },
+      ),
+    ),
+  );
+}

@@ -35,3 +35,5 @@ the menu's theme-specific text measured 10.75:1–16.09:1 across all 15 rows. Se
 - [daisyUI theme list](https://daisyui.com/docs/themes/)
 - [Gruvbox palette](https://github.com/morhetz/gruvbox/blob/master/colors/gruvbox.vim)
 - [Nord palette](https://github.com/nordtheme/nord/blob/develop/src/nord.css)
+
+The header trigger is a 44 px icon button without a truncated theme label. The palette list retains themed rows and selected state. A 240 ms circle reveal follows [Magic UI AnimatedThemeToggler](https://magicui.design/docs/components/animated-theme-toggler); unsupported browsers and reduced-motion users switch immediately. Live/cadence belongs in the bottom status bar.

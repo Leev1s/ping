@@ -15,7 +15,12 @@ import { ThemePicker, isTheme, type Theme } from "./components/theme-picker";
 import { MagicCard } from "./components/magicui/magic-card";
 import { NumberTicker } from "./components/magicui/number-ticker";
 import { TARGETS, probe, type Sample, type ProbeTarget } from "./lib/network";
-import { fetchConnectionInfo, type ConnectionReport } from "./lib/connection";
+import {
+  fetchConnectionInfo,
+  fetchLocationInfo,
+  type LocationReport,
+  type ConnectionReport,
+} from "./lib/connection";
 import {
   appendSample,
   HISTORY_LIMIT,
@@ -194,11 +199,13 @@ export default function App() {
   const [connection, setConnection] = useState<ConnectionReport | null>(null);
   const [connectionLoading, setConnectionLoading] = useState(true);
   const [infoVersion, setInfoVersion] = useState(0);
-  const [showAddresses, setShowAddresses] = useState(false);
+  const [showAddresses, setShowAddresses] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
   const [notice, setNotice] = useState("");
   const [epoch, setEpoch] = useState(0);
   const menu = useRef<HTMLDialogElement>(null);
+  const warmed = useRef(new Set<string>());
+  const [locations, setLocations] = useState<LocationReport>({});
   const activeSampling = useRef<AbortController | null>(null);
   const running = !paused && online;
   useEffect(() => {
@@ -254,21 +261,24 @@ export default function App() {
         if (controller.signal.aborted) return;
         setNow(sample.at);
         if (sample.latency !== null) setReceivedAt(sample.at);
-        setHistory((prev) => {
-          const h = prev[target.id] ?? EMPTY;
-          return {
-            ...prev,
-            [target.id]: {
-              samples: appendSample(h.samples, sample),
-              total: h.total + 1,
-              failures:
-                h.failures +
-                (sample.outcome === "error" || sample.outcome === "timeout"
-                  ? 1
-                  : 0),
-            },
-          };
-        });
+        if (!warmed.current.has(target.id)) {
+          warmed.current.add(target.id);
+        } else
+          setHistory((prev) => {
+            const h = prev[target.id] ?? EMPTY;
+            return {
+              ...prev,
+              [target.id]: {
+                samples: appendSample(h.samples, sample),
+                total: h.total + 1,
+                failures:
+                  h.failures +
+                  (sample.outcome === "error" || sample.outcome === "timeout"
+                    ? 1
+                    : 0),
+              },
+            };
+          });
       } catch {
         if (controller.signal.aborted) return;
       }
@@ -296,11 +306,17 @@ export default function App() {
   useEffect(() => {
     const controller = new AbortController();
     setConnectionLoading(true);
+    setLocations({});
     fetchConnectionInfo(controller.signal)
       .then((report) => {
         if (!controller.signal.aborted) {
           setConnection(report);
           setConnectionLoading(false);
+          void fetchLocationInfo(report, controller.signal)
+            .then((result) => {
+              if (!controller.signal.aborted) setLocations(result);
+            })
+            .catch(() => {});
         }
       })
       .catch(() => {
@@ -339,10 +355,6 @@ export default function App() {
     ]),
   ) as Record<"cn" | "global", number>;
   const total = Object.values(history).reduce((sum, h) => sum + h.total, 0);
-  const retained = Object.values(history).reduce(
-    (sum, h) => sum + h.samples.length,
-    0,
-  );
   const failures = Object.values(history).reduce(
     (sum, h) => sum + h.failures,
     0,
@@ -400,48 +412,6 @@ export default function App() {
         </a>
         <h1>Network status</h1>
         <div className="toolbar">
-          <button
-            className={`live-control ${running ? "is-live" : ""}`}
-            aria-label={paused ? "Resume" : "Pause"}
-            title={`${stateText} · ${interval}s · ${paused ? "Resume" : "Pause"} sampling${!visible ? " · Background timing is best effort" : ""}`}
-            onClick={() => setPaused(!paused)}
-          >
-            <svg
-              className={`activity-chart ${Object.values(pending).some(Boolean) ? "is-sending" : ""}`}
-              width="22"
-              height="22"
-              viewBox="0 0 22 22"
-              aria-hidden="true"
-            >
-              <path
-                d="M2 6h17m-4-3 4 3-4 3M20 16H3m4-3-4 3 4 3"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.4"
-              />
-              {running && visible && (
-                <circle
-                  className="tx-packet"
-                  cx="3"
-                  cy="6"
-                  r="2"
-                  fill="currentColor"
-                />
-              )}
-              {running && visible && receivedAt > 0 && (
-                <circle
-                  key={receivedAt}
-                  className="rx-packet"
-                  cx="19"
-                  cy="16"
-                  r="2"
-                  fill="currentColor"
-                />
-              )}
-            </svg>
-            <span className="status-badge">{stateText}</span>
-            <span className="cadence">{Number(interval.toFixed(2))}s</span>
-          </button>
           <ThemePicker value={theme} onChange={setTheme} />
           <button
             className="control"
@@ -554,6 +524,52 @@ export default function App() {
                       );
                     })}
                   </div>
+                  <div
+                    className="exit-geography"
+                    aria-label={`${region === "china" ? "China" : "International"} exit location`}
+                  >
+                    {(["location", "network", "timezone"] as const).map(
+                      (field) => {
+                        const geo = locations[region];
+                        const text = !showAddresses
+                          ? "Hidden"
+                          : geo?.status === "ok"
+                            ? geo[field] || "Unavailable"
+                            : geo?.status === "unavailable"
+                              ? "Unavailable"
+                              : "Checking…";
+                        return (
+                          <div className={`geo-row geo-${field}`} key={field}>
+                            <span className="geo-label">
+                              {field === "location"
+                                ? "Location"
+                                : field === "network"
+                                  ? "Network"
+                                  : "Time zone"}
+                            </span>
+                            <span title={showAddresses ? text : undefined}>
+                              {text}
+                            </span>
+                          </div>
+                        );
+                      },
+                    )}
+                    <span className="geo-source">
+                      {locations[region]?.family
+                        ? locations[region]?.family === "ipv6"
+                          ? "IPv6"
+                          : "IPv4"
+                        : "Location"}{" "}
+                      ·{" "}
+                      <a
+                        href="https://ipinfo.io"
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        IPinfo
+                      </a>
+                    </span>
+                  </div>
                 </Card>
               );
             })}
@@ -592,7 +608,9 @@ export default function App() {
                     const failed =
                       last?.outcome === "error" || last?.outcome === "timeout";
                     const state = !last
-                      ? "Waiting"
+                      ? warmed.current.has(target.id)
+                        ? "Waiting"
+                        : "Warm-up"
                       : last.outcome === "ok"
                         ? "HTTP verified"
                         : last.outcome === "unverified"
@@ -643,7 +661,7 @@ export default function App() {
                                       : last?.latency !== null
                                         ? "HTTP error"
                                         : "No reply"
-                                    : "—"}
+                                    : state}
                                 </span>
                               ) : (
                                 <NumberTicker value={Math.round(value)} />
@@ -711,11 +729,7 @@ export default function App() {
         </span>
         <span>
           <b className="session-total">{total.toLocaleString("en-US")}</b>
-          <span> checks</span>
-        </span>
-        <span className="retention-label">
-          <b className="retained-total">{retained.toLocaleString("en-US")}</b> /{" "}
-          {(TARGETS.length * HISTORY_LIMIT).toLocaleString("en-US")} retained
+          <span> measurements</span>
         </span>
         <span className="session-failures">
           <b>{failures}</b> failed
@@ -728,6 +742,48 @@ export default function App() {
         >
           <Github size={14} />
         </a>
+        <button
+          className={`live-control ${running ? "is-live" : ""}`}
+          aria-label={paused ? "Resume" : "Pause"}
+          title={`${stateText} · ${interval}s · ${paused ? "Resume" : "Pause"} sampling${!visible ? " · Background timing is best effort" : ""}`}
+          onClick={() => setPaused(!paused)}
+        >
+          <svg
+            className={`activity-chart ${Object.values(pending).some(Boolean) ? "is-sending" : ""}`}
+            width="22"
+            height="22"
+            viewBox="0 0 22 22"
+            aria-hidden="true"
+          >
+            <path
+              d="M2 6h17m-4-3 4 3-4 3M20 16H3m4-3-4 3 4 3"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.4"
+            />
+            {running && visible && (
+              <circle
+                className="tx-packet"
+                cx="3"
+                cy="6"
+                r="2"
+                fill="currentColor"
+              />
+            )}
+            {running && visible && receivedAt > 0 && (
+              <circle
+                key={receivedAt}
+                className="rx-packet"
+                cx="19"
+                cy="16"
+                r="2"
+                fill="currentColor"
+              />
+            )}
+          </svg>
+          <span className="status-badge">{stateText}</span>
+          <span className="cadence">{Number(interval.toFixed(2))}s</span>
+        </button>
       </footer>
       <dialog
         ref={menu}
@@ -789,6 +845,8 @@ export default function App() {
         <button
           onClick={() => {
             setEpoch((e) => e + 1);
+            activeSampling.current?.abort();
+            warmed.current.clear();
             setHistory({});
             setStartedAt(Date.now());
             setNotice("Started a new session");

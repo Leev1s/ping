@@ -10,8 +10,8 @@ This is session history only: samples are not copied to local storage or sent to
 
 The plot keeps a fixed physical frame while its linear range adapts independently
 for China and International. Each range uses the largest of that group's four
-per-probe P95 values, adds 20% headroom, and rounds up to a nice tick; it has a
-50 ms minimum and starts at 100 ms before valid readings. Three tick labels show
+per-probe P95 values rounded up to a multiple of 100 ms, with a 100 ms minimum
+and default before valid readings. Three tick labels show
 0, midpoint, and right bound.
 
 When hidden, sampling continues on a best-effort basis; browsers can throttle or
@@ -31,3 +31,5 @@ Sources: [MDN JavaScript memory management](https://developer.mozilla.org/en-US/
 - The fixed trailing 30-minute view excludes older and future-dated samples while retaining failed attempts for status and counters.
 - Statistics read every eligible retained sample in the window; each plot draws no more than 120 valid marks and preserves endpoints and latency extrema when the point limit permits.
 - Point opacity reflects elapsed age. Eviction removes old records and dynamic range changes without resizing the plot frame.
+
+The raw-history cap is internal memory management, not a measurement limit. The status bar shows cumulative session measurements and elapsed time, without a retained/cap meter. First requests are warm-up and do not enter retained history or counters.

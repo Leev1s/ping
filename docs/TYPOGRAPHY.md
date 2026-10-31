@@ -30,3 +30,7 @@ The 15-row theme menu stayed within each tested viewport and scrolled inside its
 The copy notice now sits below the final probe card. With the notice visible, its top remained 2 px below the last card at 320×568 and 667×375, and 3 px below at 375×667; none of these viewports gained page scrolling.
 
 WCAG 2.2 requires text resizing, reflow, text spacing, and contrast behavior; it does not prescribe a minimum CSS font size. See [Resize Text](https://www.w3.org/TR/WCAG22/#resize-text), [Reflow](https://www.w3.org/TR/WCAG22/#reflow), and [Text Spacing](https://www.w3.org/TR/WCAG22/#text-spacing).
+
+## Status-bar and location iteration
+
+The updated layout was captured at 320×568, 375×667, 667×375 and 1440×900 with documentation-range IP fixtures, full IPv6 values, and location/network/time-zone metadata. The header now has two 44 px icon controls. Live/cadence moved to the bottom status bar and the retained/cap meter was removed. All four captures fit without page scrolling. On the narrowest layout, P50/P95 share one line and jitter is omitted; landscape location details sit beside addresses to retain plot height. The previous 15-theme contrast checks still apply because palette text colors are unchanged.

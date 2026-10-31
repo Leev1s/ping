@@ -63,15 +63,10 @@ export function statistics(samples: readonly Sample[]) {
   };
 }
 
-/** Keep each region comparable: highest per-probe P95, 20% headroom, nice linear ticks. */
+/** Region-wide linear range: smallest positive multiple of 100 covering every P95. */
 export function groupScale(p95s: readonly (number | null)[]): number {
   const valid = p95s.filter(
     (n): n is number => n !== null && Number.isFinite(n) && n >= 0,
   );
-  if (!valid.length) return 100;
-  const required = Math.max(50, Math.max(...valid) * 1.2);
-  const power = 10 ** Math.floor(Math.log10(required));
-  return [1, 2, 2.5, 5, 10]
-    .map((step) => step * power)
-    .find((n) => n >= required)!;
+  return Math.max(100, Math.ceil(Math.max(0, ...valid) / 100) * 100);
 }

@@ -1056,21 +1056,6 @@ main {
   }
 }
 
-@media (max-width: 700px) {
-  .theme-picker-trigger {
-    width: 100px;
-    padding: 0 6px;
-  }
-  .theme-picker-trigger {
-    gap: 4px;
-  }
-}
-@media (max-width: 350px) {
-  .theme-picker-trigger {
-    width: 98px;
-  }
-}
-
 @media (max-width: 400px) {
   .exit-source {
     display: none;
@@ -1179,4 +1164,229 @@ main {
 }
 .live-control .cadence {
   flex-shrink: 0;
+}
+
+/* One compact action pair above, one persistent status bar below. */
+.toolbar {
+  gap: 4px;
+}
+.theme-picker-trigger {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+}
+.connection-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-rows: 22px minmax(0, 1fr);
+  column-gap: 16px;
+  row-gap: 6px;
+}
+.exit-heading {
+  grid-column: 1 / -1;
+}
+.address-rows {
+  grid-column: 1;
+  grid-row: 2;
+  margin: 0;
+  align-content: center;
+  gap: 8px;
+}
+.exit-geography {
+  grid-column: 2;
+  grid-row: 2;
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  min-width: 0;
+}
+.geo-row {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+  font-size: 11px;
+  line-height: 14px;
+}
+.geo-label {
+  width: 52px;
+  flex-shrink: 0;
+  color: var(--muted);
+  font-size: 10px;
+}
+.geo-row > span:last-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.geo-source {
+  font-size: 9px;
+  line-height: 12px;
+  color: var(--muted);
+}
+.geo-source a:hover {
+  color: var(--ink);
+  text-decoration: underline;
+}
+.session-strip {
+  border-top: 1px solid var(--line);
+  gap: 16px;
+  font-size: 10px;
+}
+.session-strip > .live-control {
+  margin-left: auto;
+  display: flex;
+  width: auto;
+  min-width: 112px;
+  height: 100%;
+  padding: 0 8px;
+  border-left: 1px solid var(--line);
+  border-radius: 0;
+  gap: 6px;
+}
+.session-strip .status-badge {
+  font-size: 10px;
+}
+.session-strip .cadence {
+  font-size: 10px;
+}
+.session-strip .activity-chart {
+  width: 18px;
+  height: 18px;
+}
+.session-strip .session-clock > .status-dot {
+  display: none;
+}
+.session-strip > a {
+  width: 24px;
+}
+@media (max-width: 1000px) {
+  .geo-label {
+    display: none;
+  }
+  .geo-row {
+    font-size: 10px;
+  }
+  .connection-card {
+    column-gap: 10px;
+  }
+}
+@media (max-width: 700px) {
+  .app-shell {
+    grid-template-rows: 54px minmax(0, 1fr) 32px;
+  }
+  main {
+    grid-template-rows: 168px minmax(0, 1fr);
+  }
+  .connection-card {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: space-between;
+    gap: 5px;
+  }
+  .exit-heading {
+    flex-shrink: 0;
+  }
+  .address-rows {
+    display: grid;
+    gap: 4px;
+  }
+  .exit-geography {
+    display: grid;
+    gap: 2px;
+  }
+  .geo-row {
+    line-height: 12px;
+    font-size: 10px;
+  }
+  .geo-source {
+    line-height: 11px;
+  }
+  .session-strip {
+    gap: 8px;
+    font-size: 9px;
+  }
+  .session-strip .session-clock,
+  .session-strip b {
+    font-size: 9px;
+  }
+  .session-strip > .live-control {
+    min-width: 104px;
+    padding: 0 5px;
+    gap: 4px;
+  }
+}
+@media (max-width: 350px) {
+  .app-shell {
+    grid-template-rows: 48px minmax(0, 1fr) 28px;
+  }
+  main {
+    grid-template-rows: 152px minmax(0, 1fr);
+  }
+  .geo-timezone {
+    display: none;
+  }
+  .connection-card {
+    gap: 4px;
+  }
+  .probe-card {
+    grid-template-rows: 21px minmax(22px, 1fr) 12px;
+  }
+  .probe-stats {
+    grid-template-columns: 1fr 1fr;
+    gap: 3px;
+  }
+  .probe-stats > span {
+    flex-direction: row;
+    gap: 3px;
+    align-items: baseline;
+  }
+  .probe-stats > span:last-child {
+    display: none;
+  }
+  .session-strip {
+    gap: 6px;
+  }
+  .session-strip > .live-control {
+    min-width: 100px;
+    padding: 0 3px;
+  }
+}
+@media (max-height: 500px) and (min-width: 560px) {
+  .app-shell {
+    grid-template-rows: 46px minmax(0, 1fr) 28px;
+  }
+  main {
+    grid-template-rows: 112px minmax(0, 1fr);
+  }
+  .connection-card {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: 18px 1fr;
+    column-gap: 10px;
+    row-gap: 4px;
+  }
+  .exit-geography {
+    gap: 1px;
+  }
+  .geo-row {
+    font-size: 10px;
+    line-height: 11px;
+  }
+  .geo-source {
+    font-size: 9px;
+    line-height: 10px;
+  }
+  .address-rows {
+    gap: 5px;
+  }
+}
+@media (max-width: 300px) {
+  .connection-panel {
+    min-height: 350px;
+  }
+  .connection-card {
+    min-height: 145px;
+  }
 }

@@ -4,7 +4,7 @@
 }
 
 .theme-picker-trigger {
-  width: 130px;
+  width: 44px;
   height: 44px;
   border: 1px solid transparent;
   border-radius: var(--radius-control);
@@ -12,9 +12,9 @@
   color: var(--muted);
   display: inline-flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   gap: 7px;
-  padding: 0 9px;
+  padding: 0;
   font:
     11px Inter,
     sans-serif;
@@ -125,4 +125,16 @@
   .theme-picker-list {
     scroll-behavior: auto;
   }
+}
+
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+::view-transition-new(root) {
+  z-index: 2;
+}
+::view-transition-old(root) {
+  z-index: 1;
 }

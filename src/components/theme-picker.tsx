@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, ChevronDown, Palette } from "lucide-react";
+import { flushSync } from "react-dom";
+import { Check, Palette } from "lucide-react";
 import "./theme-picker.css";
 
 export const THEME_OPTIONS = [
@@ -66,10 +67,48 @@ export function ThemePicker({
     return () => document.removeEventListener("pointerdown", closeOutside);
   }, [open]);
 
+  // Circle reveal adapted from Magic UI AnimatedThemeToggler (MIT).
+  // https://magicui.design/docs/components/animated-theme-toggler
   const choose = (theme: Theme) => {
-    onChange(theme);
     setOpen(false);
     trigger.current?.focus();
+    const apply = () => {
+      document.documentElement.dataset.theme = theme;
+      flushSync(() => onChange(theme));
+    };
+    if (theme === value) return;
+    if (
+      !document.startViewTransition ||
+      matchMedia("(prefers-reduced-motion: reduce)").matches
+    ) {
+      apply();
+      return;
+    }
+    const bounds = trigger.current!.getBoundingClientRect();
+    const x = bounds.x + bounds.width / 2;
+    const y = bounds.y + bounds.height / 2;
+    const radius = Math.hypot(
+      Math.max(x, innerWidth - x),
+      Math.max(y, innerHeight - y),
+    );
+    const transition = document.startViewTransition(apply);
+    void transition.ready
+      .then(() => {
+        document.documentElement.animate(
+          {
+            clipPath: [
+              `circle(0px at ${x}px ${y}px)`,
+              `circle(${radius}px at ${x}px ${y}px)`,
+            ],
+          },
+          {
+            duration: 240,
+            easing: "ease-out",
+            pseudoElement: "::view-transition-new(root)",
+          },
+        );
+      })
+      .catch(() => {});
   };
 
   const onListKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
@@ -100,6 +139,7 @@ export function ThemePicker({
         ref={trigger}
         type="button"
         aria-label={`Color theme: ${selected.label}`}
+        title={`Theme: ${selected.label}`}
         aria-haspopup="listbox"
         aria-expanded={open}
         onClick={() => {
@@ -121,9 +161,7 @@ export function ThemePicker({
           }
         }}
       >
-        <Palette size={16} strokeWidth={1.5} aria-hidden="true" />
-        <span className="theme-picker-label">{selected.label}</span>
-        <ChevronDown size={14} aria-hidden="true" />
+        <Palette size={18} strokeWidth={1.5} aria-hidden="true" />
       </button>
       {open && (
         <div

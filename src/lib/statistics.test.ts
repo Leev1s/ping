@@ -71,12 +71,14 @@ describe("box statistics", () => {
 });
 
 describe("shared regional scale", () => {
-  it("uses the slowest probe P95, leaves headroom and returns readable bounds", () => {
+  it("rounds the highest valid P95 up to the nearest 100 ms", () => {
     expect(groupScale([null, null])).toBe(100);
-    expect(groupScale([0, 10])).toBe(50);
+    expect(groupScale([0, 10])).toBe(100);
     expect(groupScale([20, 80, 100, 160])).toBe(200);
-    expect(groupScale([50, 500, 200, 100])).toBe(1000);
-    expect(groupScale([2500, 100])).toBe(5000);
+    expect(groupScale([50, 500, 200, 100])).toBe(500);
+    expect(groupScale([2500, 100])).toBe(2500);
     expect(groupScale([NaN, Infinity, -1])).toBe(100);
+    expect(groupScale([500.1, 100])).toBe(600);
+    expect(groupScale([99.9, 100])).toBe(100);
   });
 });

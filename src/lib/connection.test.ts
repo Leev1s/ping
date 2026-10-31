@@ -1,5 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchConnectionInfo } from "./connection";
+import {
+  fetchConnectionInfo,
+  fetchLocationInfo,
+  type ConnectionReport,
+} from "./connection";
 
 const urls = {
   china4: "https://ipv4.ddnspod.com/checkip",
@@ -148,7 +152,10 @@ describe("fetchConnectionInfo", () => {
     );
 
     const result = await fetchConnectionInfo();
-    expect(result.china.ipv6).toEqual({ status: "unavailable", reason: "http" });
+    expect(result.china.ipv6).toEqual({
+      status: "unavailable",
+      reason: "http",
+    });
   });
 
   it("propagates caller cancellation", async () => {
@@ -169,5 +176,91 @@ describe("fetchConnectionInfo", () => {
     controller.abort();
 
     await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+  });
+});
+
+const locationFixture: ConnectionReport = {
+  china: {
+    provider: "dnspod",
+    ipv4: { status: "ok", ip: "192.0.2.1" },
+    ipv6: { status: "unsupported" },
+  },
+  international: {
+    provider: "icanhazip",
+    ipv4: { status: "ok", ip: "198.51.100.1" },
+    ipv6: { status: "ok", ip: "2001:db8::1" },
+  },
+};
+describe("observed-address geolocation", () => {
+  it("looks up the actual source addresses and keeps partial metadata independent", async () => {
+    const mock = vi.fn(async (url: string) =>
+      url.includes("198.51.100.1")
+        ? new Response("limited", { status: 429 })
+        : Response.json({
+            ip: "192.0.2.1",
+            city: "Shanghai",
+            region: "Shanghai",
+            country: "CN",
+            org: "AS64500 Example",
+            timezone: "Asia/Shanghai",
+          }),
+    );
+    vi.stubGlobal("fetch", mock);
+    expect(await fetchLocationInfo(locationFixture)).toEqual({
+      china: {
+        status: "ok",
+        family: "ipv4",
+        location: "Shanghai, CN",
+        network: "AS64500 Example",
+        timezone: "Asia/Shanghai",
+      },
+      international: { status: "unavailable", family: "ipv4" },
+    });
+    expect(mock).toHaveBeenCalledTimes(2);
+  });
+  it("deduplicates identical observed addresses and rejects metadata for a different IP", async () => {
+    const mock = vi.fn(async () =>
+      Response.json({ ip: "203.0.113.9", city: "Wrong address" }),
+    );
+    vi.stubGlobal("fetch", mock);
+    const report = {
+      ...locationFixture,
+      international: {
+        ...locationFixture.international,
+        ipv4: locationFixture.china.ipv4,
+      },
+    };
+    const result = await fetchLocationInfo(report);
+    expect(mock).toHaveBeenCalledTimes(1);
+    expect(result.china?.status).toBe("unavailable");
+    expect(result.international?.status).toBe("unavailable");
+  });
+  it("uses IPv6 only when no IPv4 address is available", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({
+          ip: "2001:db8::1",
+          country: "SG",
+          org: "AS64500 Example",
+        }),
+      ),
+    );
+    const result = await fetchLocationInfo({
+      china: {
+        ...locationFixture.china,
+        ipv4: { status: "unavailable", reason: "network" },
+      },
+      international: {
+        ...locationFixture.international,
+        ipv4: { status: "unsupported" },
+      },
+    });
+    expect(result.china).toEqual({ status: "unavailable" });
+    expect(result.international).toMatchObject({
+      status: "ok",
+      family: "ipv6",
+      location: "SG",
+    });
   });
 });

@@ -95,47 +95,67 @@ async function mockNetwork(
   const requests: string[] = [];
   let scenario: Scenario = {};
 
-  await page.addInitScript((hosts: string[]) => {
-    const state = window as ProbeWindow;
-    state.__probeActive = {};
-    state.__probeMaxActive = {};
-    const originalFetch = window.fetch.bind(window);
-    window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
-      let host: string | undefined;
-      let active = false;
-      const finish = () => {
-        if (!host || !active) return;
-        state.__probeActive![host] = Math.max(
-          0,
-          (state.__probeActive![host] ?? 1) - 1,
-        );
-        active = false;
-      };
-      try {
-        const rawUrl = input instanceof Request ? input.url : String(input);
-        host = new URL(rawUrl).hostname;
-        if (!hosts.includes(host)) host = undefined;
-        if (host) {
-          const count = (state.__probeActive![host] ?? 0) + 1;
-          state.__probeActive![host] = count;
-          state.__probeMaxActive![host] = Math.max(
-            state.__probeMaxActive![host] ?? 0,
-            count,
+  await page.addInitScript(
+    (hosts: string[]) => {
+      const state = window as ProbeWindow;
+      state.__probeActive = {};
+      state.__probeMaxActive = {};
+      const originalFetch = window.fetch.bind(window);
+      window.fetch = (input: RequestInfo | URL, init?: RequestInit) => {
+        let host: string | undefined;
+        let active = false;
+        const finish = () => {
+          if (!host || !active) return;
+          state.__probeActive![host] = Math.max(
+            0,
+            (state.__probeActive![host] ?? 1) - 1,
           );
-          active = true;
-          init?.signal?.addEventListener("abort", finish, { once: true });
+          active = false;
+        };
+        try {
+          const rawUrl = input instanceof Request ? input.url : String(input);
+          host = new URL(rawUrl).hostname;
+          if (!hosts.includes(host)) host = undefined;
+          if (host) {
+            const count = (state.__probeActive![host] ?? 0) + 1;
+            state.__probeActive![host] = count;
+            state.__probeMaxActive![host] = Math.max(
+              state.__probeMaxActive![host] ?? 0,
+              count,
+            );
+            active = true;
+            init?.signal?.addEventListener("abort", finish, { once: true });
+          }
+        } catch {
+          // Keep the browser's normal fetch error for malformed requests.
         }
-      } catch {
-        // Keep the browser's normal fetch error for malformed requests.
-      }
-      return originalFetch(input, init).finally(finish);
-    };
-  }, [...probeHosts]);
+        return originalFetch(input, init).finally(finish);
+      };
+    },
+    [...probeHosts],
+  );
 
   page.on("request", (request) => requests.push(request.url()));
   await page.route("https://**/*", async (route) => {
     const url = new URL(route.request().url());
     const rawIpUrl = `${url.origin}${url.pathname}`;
+    if (url.hostname === "ipinfo.io") {
+      const ip = decodeURIComponent(url.pathname.split("/")[1]);
+      await route.fulfill({
+        status: 200,
+        headers: { ...corsHeaders, "content-type": "application/json" },
+        body: JSON.stringify({
+          ip,
+          city: ip === testAddresses.chinaV4 ? "Shanghai" : "Singapore",
+          region: ip === testAddresses.chinaV4 ? "Shanghai" : "Singapore",
+          country: ip === testAddresses.chinaV4 ? "CN" : "SG",
+          org: "AS64500 Example Network",
+          timezone:
+            ip === testAddresses.chinaV4 ? "Asia/Shanghai" : "Asia/Singapore",
+        }),
+      });
+      return;
+    }
     if ((connectionHosts as readonly string[]).includes(url.hostname)) {
       if (scenario.unreachableIpUrl === rawIpUrl) {
         await route.abort();
@@ -235,10 +255,9 @@ async function advanceProbeCycles(
     await page.clock.fastForward(seconds * 1_000 + 100);
     await waitForRequests(requests, expectedRequests);
     await expect
-      .poll(
-        () => page.locator(".session-total").innerText().then(parseCount),
-        { timeout: 7_000 },
-      )
+      .poll(() => page.locator(".session-total").innerText().then(parseCount), {
+        timeout: 7_000,
+      })
       .toBeGreaterThanOrEqual(expectedCompleted);
     await expect(page.locator(".latency-dot.is-probing")).toHaveCount(0);
   }
@@ -320,7 +339,9 @@ function parseCount(text: string): number {
 async function regionScales(page: Page, region: "cn" | "global") {
   return page
     .locator(`.region-panel[data-region="${region}"] svg.boxplot`)
-    .evaluateAll((plots) => plots.map((plot) => Number(plot.getAttribute("data-scale"))));
+    .evaluateAll((plots) =>
+      plots.map((plot) => Number(plot.getAttribute("data-scale"))),
+    );
 }
 
 test("renders eight probes, two IPv4/IPv6 exits, and the ordered toolbar", async ({
@@ -343,18 +364,24 @@ test("renders eight probes, two IPv4/IPv6 exits, and the ordered toolbar", async
   await expect(page.locator(".service-avatar, .probe-status")).toHaveCount(0);
 
   const toolbar = page.locator(".toolbar button");
-  await expect(toolbar).toHaveCount(3);
-  await expect(toolbar.nth(0)).toHaveClass(/live-control/);
-  await expect(toolbar.nth(0)).toHaveAttribute("title", /Pause sampling/);
-  await expect(toolbar.nth(0).locator(".cadence")).toHaveText("3s");
-  await expect(toolbar.nth(1)).toHaveAttribute(
+  await expect(toolbar).toHaveCount(2);
+  await expect(page.locator("footer .live-control")).toHaveCount(1);
+  await expect(page.locator("footer .live-control")).toHaveAttribute(
+    "title",
+    /Pause sampling/,
+  );
+  await expect(page.locator("footer .cadence")).toHaveText("3s");
+  await expect(toolbar.nth(0)).toHaveAttribute(
     "aria-label",
     "Color theme: Light",
   );
-  await expect(toolbar.nth(2)).toHaveAttribute("aria-label", "More options");
+  await expect(toolbar.nth(1)).toHaveAttribute("aria-label", "More options");
+  await expect(page.locator(".retention-label,.retained-total")).toHaveCount(0);
 
   await expect
-    .poll(async () => page.locator(".p95-value").first().innerText())
+    .poll(async () => page.locator(".p95-value").first().innerText(), {
+      timeout: 8000,
+    })
     .toMatch(/~\s*\d/);
 
   const axis = page.locator(".plot-axis").first();
@@ -409,12 +436,21 @@ test("renders eight probes, two IPv4/IPv6 exits, and the ordered toolbar", async
   ).toHaveCount(4);
 
   await waitForAllProbes(session.requests);
+  await expect(page.locator('.latency-dot[aria-label="Warm-up"]')).toHaveCount(
+    0,
+  );
   await waitForConnectionSources(session.requests);
   await expect(chinaCard.locator(".exit-address")).toHaveCount(2);
   await expect(internationalCard.locator(".exit-address")).toHaveCount(2);
   await expect(chinaCard.locator(".exit-address").first()).toHaveText(
+    testAddresses.chinaV4,
+  );
+  await expect(chinaCard.locator(".geo-location")).toContainText("Shanghai");
+  await page.getByRole("button", { name: "Hide addresses" }).click();
+  await expect(chinaCard.locator(".exit-address").first()).toHaveText(
     "••••••••",
   );
+  await expect(chinaCard.locator(".geo-location")).toContainText("Hidden");
   await page.getByRole("button", { name: "Show addresses" }).click();
   await expect(chinaCard.locator(".exit-address").nth(0)).toHaveText(
     testAddresses.chinaV4,
@@ -446,9 +482,9 @@ test("renders eight probes, two IPv4/IPv6 exits, and the ordered toolbar", async
   const options = page.getByRole("dialog", { name: "More options" });
   await expect(options).toBeVisible();
   await expect(options.getByLabel("History window")).toHaveCount(0);
-  await expect(options.getByRole("button", { name: /plot scale/i })).toHaveCount(
-    0,
-  );
+  await expect(
+    options.getByRole("button", { name: /plot scale/i }),
+  ).toHaveCount(0);
   await page.keyboard.press("Escape");
 });
 
@@ -458,6 +494,9 @@ test("theme menu is accessible, scrollable, persistent, and does not resize the 
   const session = await mockNetwork(page);
   await page.goto("/");
   await waitForAllProbes(session.requests);
+  await expect(page.locator('.latency-dot[aria-label="Warm-up"]')).toHaveCount(
+    0,
+  );
   await waitForConnectionSources(session.requests);
   await page.evaluate(() => document.fonts.ready);
 
@@ -475,7 +514,9 @@ test("theme menu is accessible, scrollable, persistent, and does not resize the 
       lang: document.documentElement.lang,
       families: [...families],
       files,
-      external: files.filter((name) => new URL(name).origin !== location.origin),
+      external: files.filter(
+        (name) => new URL(name).origin !== location.origin,
+      ),
     };
   });
   expect(fonts.hasCjk).toBe(false);
@@ -489,14 +530,21 @@ test("theme menu is accessible, scrollable, persistent, and does not resize the 
   const trigger = page.locator(".theme-picker-trigger");
   await expect(trigger).toHaveAttribute("aria-haspopup", "listbox");
   const menu = page.getByRole("listbox", { name: "Color theme" });
-  const sizes = [[320, 568], [1440, 900]] as const;
+  const sizes = [
+    [320, 568],
+    [1440, 900],
+  ] as const;
   for (const [width, height] of sizes) {
     await page.setViewportSize({ width, height });
     const referenceGeometry = await geometry(page);
     await trigger.click();
     await expect(menu).toBeVisible();
     await expect(menu.getByRole("option")).toHaveCount(themes.length);
-    expect((await menu.getByRole("option").allTextContents()).map((item) => item.trim())).toEqual(themeLabels);
+    expect(
+      (await menu.getByRole("option").allTextContents()).map((item) =>
+        item.trim(),
+      ),
+    ).toEqual(themeLabels);
     const scroll = await menu.evaluate((element) => ({
       overflowY: getComputedStyle(element).overflowY,
       scrollHeight: element.scrollHeight,
@@ -560,9 +608,9 @@ test("theme menu is accessible, scrollable, persistent, and does not resize the 
     "aria-label",
     "Color theme: Cupcake",
   );
-  expect(await page.evaluate(() => document.documentElement.dataset.theme)).toBe(
-    "cupcake",
-  );
+  expect(
+    await page.evaluate(() => document.documentElement.dataset.theme),
+  ).toBe("cupcake");
 });
 
 test("uses a three-second default and accepts manually entered sampling intervals", async ({
@@ -575,6 +623,9 @@ test("uses a three-second default and accepts manually entered sampling interval
   const session = await mockNetwork(page);
   await page.goto("/");
   await waitForAllProbes(session.requests);
+  await expect(page.locator('.latency-dot[aria-label="Warm-up"]')).toHaveCount(
+    0,
+  );
   await expect(page.locator(".live-control .cadence")).toHaveText("3s");
 
   await page.getByRole("button", { name: "More options" }).click();
@@ -622,7 +673,11 @@ test("keeps measuring beyond sixty attempts and bounds plots and exported histor
   const session = await mockNetwork(page);
   await page.goto("/");
   await waitForAllProbes(session.requests);
-  await advanceProbeCycles(page, session.requests, 60);
+  await expect(page.locator('.latency-dot[aria-label="Warm-up"]')).toHaveCount(
+    0,
+  );
+  await expect(page.locator(".latency-dot.is-probing")).toHaveCount(0);
+  await advanceProbeCycles(page, session.requests, 61);
 
   for (const name of [
     "Cloudflare",
@@ -635,9 +690,9 @@ test("keeps measuring beyond sixty attempts and bounds plots and exported histor
     "Taobao",
   ]) {
     const card = cardFor(page, name);
-    expect(await card.locator("circle.sample-point").count()).toBeLessThanOrEqual(
-      120,
-    );
+    expect(
+      await card.locator("circle.sample-point").count(),
+    ).toBeLessThanOrEqual(120);
     await expect(card.locator("rect.iqr-box")).toHaveCount(1);
     await expect(card.locator(".median-line")).toHaveCount(1);
   }
@@ -655,13 +710,10 @@ test("keeps measuring beyond sixty attempts and bounds plots and exported histor
   expect(opacity.length).toBeGreaterThan(8);
   expect(Math.max(...opacity)).toBeGreaterThan(Math.min(...opacity));
 
-  const sessionTotal = parseCount(await page.locator(".session-total").innerText());
-  const retainedTotal = parseCount(
-    await page.locator(".retained-total").innerText(),
+  const sessionTotal = parseCount(
+    await page.locator(".session-total").innerText(),
   );
   expect(sessionTotal).toBeGreaterThan(8 * 60);
-  expect(retainedTotal).toBeGreaterThan(8 * 60);
-  expect(retainedTotal).toBeLessThanOrEqual(8 * 1_200);
   for (const value of await page.locator(".p95-value").all()) {
     await expect(value).not.toContainText("~");
     await expect(value).toHaveText(/\d/);
@@ -694,6 +746,9 @@ test("uses a changing shared scale per region and shows probe failures without l
   const session = await mockNetwork(page);
   await page.goto("/");
   await waitForAllProbes(session.requests);
+  await expect(page.locator('.latency-dot[aria-label="Warm-up"]')).toHaveCount(
+    0,
+  );
   await expect(page.locator("article.probe-card")).toHaveCount(8);
   await page.evaluate(() => document.fonts.ready);
   const emptyGeometry = await geometry(page);
@@ -714,7 +769,9 @@ test("uses a changing shared scale per region and shows probe failures without l
   await advanceProbeCycles(page, session.requests, 1);
   await expect
     .poll(async () => {
-      const text = await cardFor(page, "Baidu").locator(".probe-latest").innerText();
+      const text = await cardFor(page, "Baidu")
+        .locator(".probe-latest")
+        .innerText();
       return Number.parseFloat(text.replace(/[^\d.]/g, "")) || 0;
     })
     .toBeGreaterThan(500);
@@ -739,7 +796,9 @@ test("uses a changing shared scale per region and shows probe failures without l
     ["cn", updatedChina[0]],
     ["global", updatedInternational[0]],
   ] as const) {
-    const axis = page.locator(`.region-panel[data-region="${region}"] .plot-axis`);
+    const axis = page.locator(
+      `.region-panel[data-region="${region}"] .plot-axis`,
+    );
     await expect(axis.first()).toHaveAttribute(
       "aria-label",
       `Linear 0–${scale} millisecond scale`,
@@ -765,12 +824,12 @@ test("uses a changing shared scale per region and shows probe failures without l
     "aria-label",
     "Failed",
   );
-  expect(await cloudflare.locator("circle.sample-point").count()).toBeGreaterThan(
-    0,
-  );
-  expect(await cloudflare.locator("circle.sample-point").count()).toBeLessThanOrEqual(
-    oldPointCount + 1,
-  );
+  expect(
+    await cloudflare.locator("circle.sample-point").count(),
+  ).toBeGreaterThan(0);
+  expect(
+    await cloudflare.locator("circle.sample-point").count(),
+  ).toBeLessThanOrEqual(oldPointCount + 1);
   expect(await geometry(page)).toEqual(emptyGeometry);
 });
 
@@ -780,7 +839,6 @@ test("distinguishes unsupported address families from network failures", async (
   const session = await mockNetwork(page);
   await page.goto("/");
   await waitForConnectionSources(session.requests);
-  await page.getByRole("button", { name: "Show addresses" }).click();
 
   session.setScenario({
     unsupportedIpUrl: "https://ipv6.ddnspod.com/checkip",
@@ -798,22 +856,17 @@ test("distinguishes unsupported address families from network failures", async (
   const internationalCard = page.locator(
     '.connection-card[data-provider="international"]',
   );
-  await expect(chinaCard.locator(".address-row").nth(0).locator(".exit-address"))
-    .not.toHaveText("Unavailable");
+  await expect(
+    chinaCard.locator(".address-row").nth(0).locator(".exit-address"),
+  ).not.toHaveText("Unavailable");
   await expect(
     chinaCard.locator(".address-row").nth(1).locator(".exit-address"),
   ).toHaveText("Not supported");
   await expect(
-    internationalCard
-      .locator(".address-row")
-      .nth(0)
-      .locator(".exit-address"),
+    internationalCard.locator(".address-row").nth(0).locator(".exit-address"),
   ).toHaveText("Unavailable");
   await expect(
-    internationalCard
-      .locator(".address-row")
-      .nth(1)
-      .locator(".exit-address"),
+    internationalCard.locator(".address-row").nth(1).locator(".exit-address"),
   ).toHaveText(testAddresses.internationalV6);
 });
 
@@ -834,18 +887,27 @@ test("keeps measurements running while the page is hidden and pauses on request"
   const session = await mockNetwork(page);
   await page.goto("/");
   await waitForAllProbes(session.requests);
+  await expect(page.locator('.latency-dot[aria-label="Warm-up"]')).toHaveCount(
+    0,
+  );
 
   await page.getByRole("button", { name: "More options" }).click();
   const menu = page.getByRole("dialog", { name: "More options" });
   await menu.getByLabel("Sampling interval").fill("1");
   await menu.getByRole("button", { name: "Apply interval" }).click();
-  await waitForRequests(session.requests, probeHosts.length * 2 + connectionHosts.length);
+  await waitForRequests(
+    session.requests,
+    probeHosts.length * 2 + connectionHosts.length,
+  );
 
   await expect(page.locator(".latency-dot.is-probing")).toHaveCount(0);
   const beforeHiddenCycle = session.requests.length;
   await page.evaluate(() => (window as ProbeWindow).__pingSetHidden?.(true));
   await expect(page.locator(".status-badge")).toHaveText("Background");
-  await waitForRequests(session.requests, beforeHiddenCycle + probeHosts.length);
+  await waitForRequests(
+    session.requests,
+    beforeHiddenCycle + probeHosts.length,
+  );
   await expect(page.locator(".latency-dot.is-probing")).toHaveCount(0);
   const beforeForeground = session.requests.length;
   await page.evaluate(() => (window as ProbeWindow).__pingSetHidden?.(false));
@@ -858,4 +920,27 @@ test("keeps measurements running while the page is hidden and pauses on request"
   await page.evaluate(() => (window as ProbeWindow).__pingSetHidden?.(false));
   await page.waitForTimeout(1_200);
   expect(session.requests).toHaveLength(stoppedAt);
+});
+
+test("discards only the initial warm-up per probe and resumes without re-warming", async ({
+  page,
+}) => {
+  await installClock(page);
+  const session = await mockNetwork(page);
+  await page.goto("/");
+  await waitForAllProbes(session.requests);
+  await expect(page.locator('.latency-dot[aria-label="Warm-up"]')).toHaveCount(
+    0,
+  );
+  await expect(page.locator(".latency-dot.is-probing")).toHaveCount(0);
+  await expect(page.locator(".reading-state").first()).toHaveText("Waiting");
+  await expect(page.locator(".session-total")).toHaveText("0");
+  await expect(page.locator("circle.sample-point")).toHaveCount(0);
+  for (const value of await page.locator(".p95-value").all())
+    await expect(value).toHaveText("—");
+  await advanceProbeCycles(page, session.requests, 1);
+  await expect(page.locator(".session-total")).toHaveText("8");
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
+  await page.getByRole("button", { name: "Resume", exact: true }).click();
+  await expect(page.locator(".session-total")).toHaveText("16");
 });
