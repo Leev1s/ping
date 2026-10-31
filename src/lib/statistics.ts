@@ -64,12 +64,17 @@ export function statistics(samples: readonly Sample[]) {
   };
 }
 
-/** Region-wide linear range: smallest positive multiple of 100 covering every P95. */
-export function groupScale(p95s: readonly (number | null)[]): number {
-  const valid = p95s.filter(
-    (n): n is number => n !== null && Number.isFinite(n) && n >= 0,
-  );
-  return Math.max(100, Math.ceil(Math.max(0, ...valid) / 100) * 100);
+/** Shared linear bounds, aligned to 50 ms and covering the lowest sample / highest P95. */
+export function groupRange(
+  summaries: readonly { min: number | null; p95: number | null }[],
+) {
+  const valid = (value: number | null): value is number =>
+    value !== null && Number.isFinite(value) && value >= 0;
+  const minima = summaries.map((summary) => summary.min).filter(valid);
+  const p95s = summaries.map((summary) => summary.p95).filter(valid);
+  const min = minima.length ? Math.floor(Math.min(...minima) / 50) * 50 : 0;
+  const max = Math.max(min + 50, Math.ceil(Math.max(0, ...p95s) / 50) * 50);
+  return { min, max };
 }
 
 /** One bounded cache per probe; invalidate on new data or an exact window boundary. */

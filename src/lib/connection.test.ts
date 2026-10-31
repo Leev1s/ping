@@ -202,7 +202,6 @@ describe("observed-address geolocation", () => {
             region: "Shanghai",
             country: "CN",
             org: "AS64500 Example",
-            timezone: "Asia/Shanghai",
           }),
     );
     vi.stubGlobal("fetch", mock);
@@ -212,7 +211,6 @@ describe("observed-address geolocation", () => {
         family: "ipv4",
         location: "Shanghai, CN",
         network: "AS64500 Example",
-        timezone: "Asia/Shanghai",
       },
       international: { status: "unavailable", family: "ipv4" },
     });

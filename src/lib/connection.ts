@@ -139,7 +139,6 @@ export type LocationResult = {
   family?: "ipv4" | "ipv6";
   location?: string;
   network?: string;
-  timezone?: string;
 };
 export type LocationReport = Partial<
   Record<keyof ConnectionReport, LocationResult>
@@ -184,13 +183,11 @@ export async function fetchLocationInfo(
         ),
       ].join(", ");
       const network = string("org");
-      const timezone = string("timezone");
       return {
-        status: location || network || timezone ? "ok" : "unavailable",
+        status: location || network ? "ok" : "unavailable",
         family,
         location,
         network,
-        timezone,
       };
     } catch {
       if (signal?.aborted) throw abortReason(signal);

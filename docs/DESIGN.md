@@ -11,9 +11,9 @@ The information hierarchy draws on [cf.090227.xyz's network page](https://cf.090
 | Area | Information and behavior |
 | --- | --- |
 | Header | Ping mark and “Network status”, followed by two matching icon buttons: a 15-theme listbox and More options. Theme changes use a short Magic UI-inspired circle reveal, with reduced-motion and unsupported-browser fallbacks. There is no slogan or introductory paragraph. |
-| Connection panel | Equal Mainland and International cards show IPv4 and IPv6 from Tencent DNSPod and Cloudflare's ICanHazIP endpoint. Addresses start visible, can be hidden or copied, and refresh manually. Location, network and time zone describe the explicitly identified IPv4 address (or IPv6 when IPv4 is unavailable). |
+| Connection panel | Equal Mainland and International cards show IPv4 and IPv6 from Tencent DNSPod and Cloudflare's ICanHazIP endpoint. Addresses start visible, can be hidden or copied, and refresh manually. Location and network describe the observed IPv4 address (or IPv6 when IPv4 is unavailable). |
 | Probe groups | Mainland China and International, four fixed cards each. A card shows service, endpoint host, latest reading or failure state, a latency-colored activity dot, horizontal box plot and samples, P50/P95/jitter, and attempt counts. |
-| Session footer | A bottom status bar shows session duration, cumulative measurements and failures on the left, plus animated Live/pause and cadence on the right. Internal history capacity is not displayed. Sampling continues after the memory cap is reached. |
+| Session footer | A plain bottom status row shows session duration, cumulative measurements and failures on the left, plus animated Live/pause and cadence on the right. It has no horizontal border or divider beside Live. Internal history capacity is not displayed. Sampling continues after the memory cap is reached. |
 | More options | Set an interval from 1 to 300 seconds (decimals allowed), export data, clear the session, or open GitHub. Connection information is refreshed from its panel button. There are no history-window or plot-scale selectors. |
 
 The live/pause control is the only direct sampling toggle. The selected theme and interval are saved in browser local storage; samples remain in page memory only.
@@ -39,7 +39,7 @@ These are public HTTP endpoints rather than contractual probe APIs. The pinned j
 
 ## Box plot and statistics
 
-Every probe uses a fixed-size horizontal Tukey box plot. Each region's four probes share a linear range: the right bound is the smallest multiple of 100 ms not below the largest per-probe P95 in that region; it has a 100 ms minimum and defaults to 100 ms before valid readings. Three ticks show zero, midpoint, and right bound. Q1 and Q3 delimit the box, the median is its center line, and whiskers reach the most extreme observations within the 1.5 × IQR fences. Quartiles use linear interpolation over sorted values. The box and whiskers appear after five valid measurements. Individual sample points remain visible, including outliers. Points beyond the current range stay clipped to the boundary and are indicated separately; the card and plot frame keep fixed dimensions as the shared range changes.
+Every probe uses a fixed-size horizontal Tukey box plot. Each region's four probes share a linear range: the right bound is a lower bound at the lowest valid sample rounded down to 50 ms and an upper bound at the largest per-probe P95 rounded up to 50 ms. At least one 50 ms interval is shown; empty groups default to 0–50 ms. Tick marks use 50 ms increments, with sparse labels to prevent overlap. Q1 and Q3 delimit the box, the median is its center line, and whiskers reach the most extreme observations within the 1.5 × IQR fences. Quartiles use linear interpolation over sorted values. The box and whiskers appear after five valid measurements. Individual sample points remain visible, including outliers. Points beyond the current range stay clipped to the boundary and are indicated separately; the card and plot frame keep fixed dimensions as the shared range changes.
 
 All statistics use valid samples from the fixed trailing 30-minute window:
 
@@ -63,7 +63,7 @@ History is session-only: it is not written to local storage or sent to a Ping se
 
 ## Connection information and API limits
 
-At startup and on manual refresh, Ping makes four direct no-key lookups: Tencent DNSPod's IPv4 and IPv6 check endpoints, and Cloudflare's ICanHazIP IPv4 and IPv6 endpoints. Each returns a plain-text address; cards keep the two route results separate. Addresses start visible and can be hidden or copied. IPinfo enriches one observed address per source (IPv4 preferred) with location, network and time zone; lookup errors never block address display or measurements. Explicit HTTP 501 means unsupported; other HTTP and browser network errors are unavailable because fetch cannot distinguish missing family support from DNS or CORS failures. The requests expose the visitor's source address to each provider and are not proxied or stored by Ping. The sources and observed Mainland route are documented in [IP.md](IP.md).
+At startup and on manual refresh, Ping makes four direct no-key lookups: Tencent DNSPod's IPv4 and IPv6 check endpoints, and Cloudflare's ICanHazIP IPv4 and IPv6 endpoints. Each returns a plain-text address; cards keep the two route results separate. Addresses start visible and can be hidden or copied. IPinfo enriches one observed address per source (IPv4 preferred) with location and network; lookup errors never block address display or measurements. Explicit HTTP 501 means unsupported; other HTTP and browser network errors are unavailable because fetch cannot distinguish missing family support from DNS or CORS failures. The requests expose the visitor's source address to each provider and are not proxied or stored by Ping. The sources and observed Mainland route are documented in [IP.md](IP.md).
 
 ## Device and visual system
 

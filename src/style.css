@@ -180,7 +180,7 @@ input:focus-visible {
 }
 main {
   display: grid;
-  grid-template-rows: 156px minmax(0, 1fr);
+  grid-template-rows: 138px minmax(0, 1fr);
   gap: 14px;
   min-height: 0;
   min-width: 0;
@@ -309,27 +309,6 @@ main {
     9px "JetBrains Mono",
     monospace;
   color: var(--muted);
-}
-.plot-legend {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  font:
-    10px "JetBrains Mono",
-    monospace;
-  color: var(--muted);
-  white-space: nowrap;
-}
-.legend-old,
-.legend-new {
-  width: 4px;
-  height: 4px;
-  background: var(--accent);
-  border-radius: 50%;
-  display: inline-block;
-}
-.legend-old {
-  opacity: 0.22;
 }
 .probe-grid {
   display: grid;
@@ -818,15 +797,6 @@ main {
   .region-mark {
     display: none;
   }
-  .plot-legend {
-    font-size: 9px;
-    gap: 2px;
-  }
-  .legend-old,
-  .legend-new {
-    width: 3px;
-    height: 3px;
-  }
   .probe-grid {
     gap: 6px;
   }
@@ -956,9 +926,6 @@ main {
   .latest-reading > span {
     font-size: 9px;
   }
-  .plot-legend {
-    font-size: 9px;
-  }
   .region-heading h2 {
     font-size: 11px;
   }
@@ -1039,9 +1006,6 @@ main {
   }
   .plot-frame {
     grid-template-rows: minmax(0, 1fr) 12px;
-  }
-  .plot-legend {
-    font-size: 9px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -1219,17 +1183,7 @@ main {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.geo-source {
-  font-size: 9px;
-  line-height: 12px;
-  color: var(--muted);
-}
-.geo-source a:hover {
-  color: var(--ink);
-  text-decoration: underline;
-}
 .session-strip {
-  border-top: 1px solid var(--line);
   gap: 16px;
   font-size: 10px;
 }
@@ -1240,7 +1194,6 @@ main {
   min-width: 112px;
   height: 100%;
   padding: 0 8px;
-  border-left: 1px solid var(--line);
   border-radius: 0;
   gap: 6px;
 }
@@ -1276,7 +1229,7 @@ main {
     grid-template-rows: 54px minmax(0, 1fr) 32px;
   }
   main {
-    grid-template-rows: 168px minmax(0, 1fr);
+    grid-template-rows: 142px minmax(0, 1fr);
   }
   .connection-card {
     display: flex;
@@ -1300,9 +1253,6 @@ main {
     line-height: 12px;
     font-size: 10px;
   }
-  .geo-source {
-    line-height: 11px;
-  }
   .session-strip {
     gap: 8px;
     font-size: 9px;
@@ -1322,10 +1272,7 @@ main {
     grid-template-rows: 48px minmax(0, 1fr) 28px;
   }
   main {
-    grid-template-rows: 152px minmax(0, 1fr);
-  }
-  .geo-timezone {
-    display: none;
+    grid-template-rows: 138px minmax(0, 1fr);
   }
   .connection-card {
     gap: 4px;
@@ -1374,10 +1321,6 @@ main {
     font-size: 10px;
     line-height: 11px;
   }
-  .geo-source {
-    font-size: 9px;
-    line-height: 10px;
-  }
   .address-rows {
     gap: 5px;
   }
@@ -1424,4 +1367,11 @@ main {
     animation: none;
     opacity: 0;
   }
+}
+
+.plot-minor-ticks {
+  fill: none;
+  stroke: var(--grid);
+  stroke-width: 1;
+  pointer-events: none;
 }

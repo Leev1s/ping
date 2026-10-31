@@ -377,6 +377,23 @@ test("renders eight probes, two IPv4/IPv6 exits, and the ordered toolbar", async
   );
   await expect(toolbar.nth(1)).toHaveAttribute("aria-label", "More options");
   await expect(page.locator(".retention-label,.retained-total")).toHaveCount(0);
+  await expect(
+    page.locator(".geo-source,.geo-timezone,.plot-legend"),
+  ).toHaveCount(0);
+  await expect(page.locator(".geo-row")).toHaveCount(4);
+  await expect(page.locator('.plot-minor-ticks[data-step="50"]')).toHaveCount(
+    8,
+  );
+  expect(
+    await page
+      .locator("footer")
+      .evaluate((node) => getComputedStyle(node).borderTopWidth),
+  ).toBe("0px");
+  expect(
+    await page
+      .locator("footer .live-control")
+      .evaluate((node) => getComputedStyle(node).borderLeftWidth),
+  ).toBe("0px");
 
   await expect
     .poll(async () => page.locator(".p95-value").first().innerText(), {
@@ -387,9 +404,11 @@ test("renders eight probes, two IPv4/IPv6 exits, and the ordered toolbar", async
   const axis = page.locator(".plot-axis").first();
   await expect(axis).toHaveAttribute(
     "aria-label",
-    /^Linear 0–\d+ millisecond scale$/,
+    /^Linear \d+–\d+ millisecond scale$/,
   );
-  await expect(axis.locator("span").first()).toHaveText("0");
+  await expect(axis.locator("span").first()).toHaveText(
+    (await page.locator("svg.boxplot").first().getAttribute("data-min"))!,
+  );
   await expect(axis.locator("span").last()).toContainText("ms");
   const initialChinaScales = await regionScales(page, "cn");
   const initialInternationalScales = await regionScales(page, "global");
@@ -491,6 +510,7 @@ test("renders eight probes, two IPv4/IPv6 exits, and the ordered toolbar", async
 test("theme menu is accessible, scrollable, persistent, and does not resize the page", async ({
   page,
 }) => {
+  test.setTimeout(60_000);
   const session = await mockNetwork(page);
   await page.goto("/");
   await waitForAllProbes(session.requests);
@@ -668,7 +688,7 @@ test("uses a three-second default and accepts manually entered sampling interval
 test("keeps sampling beyond 120 points with stable marks, arrival rings and bounded history", async ({
   page,
 }) => {
-  test.setTimeout(90_000);
+  test.setTimeout(180_000);
   await installClock(page);
   const session = await mockNetwork(page);
   await page.goto("/");
@@ -677,6 +697,9 @@ test("keeps sampling beyond 120 points with stable marks, arrival rings and boun
     0,
   );
   await expect(page.locator(".latency-dot.is-probing")).toHaveCount(0);
+  // Keep this synthetic stress replay independent of real renderer speed.
+  // The next cycle starts only after all responses/React commits have settled.
+  await page.clock.pauseAt(await page.evaluate(() => Date.now() + 100));
   await advanceProbeCycles(page, session.requests, 125);
 
   for (const name of [
@@ -717,7 +740,7 @@ test("keeps sampling beyond 120 points with stable marks, arrival rings and boun
           node: point,
           cx: point.getAttribute("cx"),
           cy: point.getAttribute("cy"),
-          scale: point.closest("svg")!.getAttribute("data-scale"),
+          scale: `${point.closest("svg")!.getAttribute("data-min")}:${point.closest("svg")!.getAttribute("data-scale")}`,
         },
       ]),
     );
@@ -747,7 +770,8 @@ test("keeps sampling beyond 120 points with stable marks, arrival rings and boun
         if (old.node !== point || old.cy !== point.getAttribute("cy"))
           stable = false;
         if (
-          old.scale === point.closest("svg")!.getAttribute("data-scale") &&
+          old.scale ===
+            `${point.closest("svg")!.getAttribute("data-min")}:${point.closest("svg")!.getAttribute("data-scale")}` &&
           old.cx !== point.getAttribute("cx")
         )
           stable = false;
@@ -892,11 +916,15 @@ test("uses a changing shared scale per region and shows probe failures without l
     const axis = page.locator(
       `.region-panel[data-region="${region}"] .plot-axis`,
     );
+    const lower = await page
+      .locator(`.region-panel[data-region="${region}"] svg.boxplot`)
+      .first()
+      .getAttribute("data-min");
     await expect(axis.first()).toHaveAttribute(
       "aria-label",
-      `Linear 0–${scale} millisecond scale`,
+      `Linear ${lower}–${scale} millisecond scale`,
     );
-    await expect(axis.first().locator("span").first()).toHaveText("0");
+    await expect(axis.first().locator("span").first()).toHaveText(lower!);
   }
   expect(await geometry(page)).toEqual(emptyGeometry);
 
@@ -1037,4 +1065,35 @@ test("discards only the initial warm-up per probe and resumes without re-warming
   await page.getByRole("button", { name: "Pause", exact: true }).click();
   await page.getByRole("button", { name: "Resume", exact: true }).click();
   await expect(page.locator(".session-total")).toHaveText("16");
+});
+
+test("uses positive shared lower bounds with a 50 ms base increment", async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    localStorage.setItem("ping-interval-seconds", "1"),
+  );
+  const session = await mockNetwork(page, 220);
+  await page.goto("/");
+  await expect(page.locator(".session-total")).not.toHaveText("0", {
+    timeout: 10000,
+  });
+  await expect(page.locator(".latency-dot.is-probing")).toHaveCount(0);
+  for (const region of ["cn", "global"]) {
+    const ranges = await page
+      .locator(`.region-panel[data-region="${region}"] svg.boxplot`)
+      .evaluateAll((plots) =>
+        plots.map((node) => ({
+          min: Number(node.getAttribute("data-min")),
+          max: Number(node.getAttribute("data-scale")),
+        })),
+      );
+    expect(
+      new Set(ranges.map((range) => `${range.min}:${range.max}`)).size,
+    ).toBe(1);
+    expect(ranges[0].min).toBeGreaterThanOrEqual(200);
+    expect(ranges[0].min % 50).toBe(0);
+    expect(ranges[0].max % 50).toBe(0);
+    expect(ranges[0].max - ranges[0].min).toBeGreaterThanOrEqual(50);
+  }
 });

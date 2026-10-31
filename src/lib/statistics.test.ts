@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { statistics, groupScale, createWindowStatistics } from "./statistics";
+import { statistics, groupRange, createWindowStatistics } from "./statistics";
 import type { Sample } from "./network";
 const samples = (values: number[]): Sample[] =>
   values.map((latency, at) => ({ latency, at, outcome: "ok" }));
@@ -70,16 +70,32 @@ describe("box statistics", () => {
   });
 });
 
-describe("shared regional scale", () => {
-  it("rounds the highest valid P95 up to the nearest 100 ms", () => {
-    expect(groupScale([null, null])).toBe(100);
-    expect(groupScale([0, 10])).toBe(100);
-    expect(groupScale([20, 80, 100, 160])).toBe(200);
-    expect(groupScale([50, 500, 200, 100])).toBe(500);
-    expect(groupScale([2500, 100])).toBe(2500);
-    expect(groupScale([NaN, Infinity, -1])).toBe(100);
-    expect(groupScale([500.1, 100])).toBe(600);
-    expect(groupScale([99.9, 100])).toBe(100);
+describe("shared regional range", () => {
+  it("aligns both bounds to 50 ms, using the lowest sample and highest per-probe P95", () => {
+    expect(groupRange([])).toEqual({ min: 0, max: 50 });
+    expect(
+      groupRange([
+        { min: 162, p95: 348 },
+        { min: 208, p95: 404 },
+      ]),
+    ).toEqual({ min: 150, max: 450 });
+    expect(groupRange([{ min: 250, p95: 250 }])).toEqual({
+      min: 250,
+      max: 300,
+    });
+    expect(groupRange([{ min: 0, p95: 49.9 }])).toEqual({ min: 0, max: 50 });
+    expect(groupRange([{ min: 50, p95: 500 }])).toEqual({ min: 50, max: 500 });
+    expect(groupRange([{ min: 50, p95: 500.1 }])).toEqual({
+      min: 50,
+      max: 550,
+    });
+    expect(
+      groupRange([
+        { min: NaN, p95: Infinity },
+        { min: null, p95: null },
+        { min: -1, p95: -1 },
+      ]),
+    ).toEqual({ min: 0, max: 50 });
   });
 });
 

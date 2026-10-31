@@ -10,9 +10,10 @@ This is session history only: samples are not copied to local storage or sent to
 
 The plot keeps a fixed physical frame while its linear range adapts independently
 for China and International. Each range uses the largest of that group's four
-per-probe P95 values rounded up to a multiple of 100 ms, with a 100 ms minimum
-and default before valid readings. Three tick labels show
-0, midpoint, and right bound.
+per-probe P95 values rounded up to 50 ms for the upper bound, and the lowest valid
+reading rounded down to 50 ms for the lower bound. The minimum span is 50 ms,
+with 0–50 ms before valid readings. Labels are thinned when necessary; tick marks
+retain the 50 ms base increment.
 
 When hidden, sampling continues on a best-effort basis; browsers can throttle or
 suspend timers. On return, Ping starts a fresh round immediately and does not

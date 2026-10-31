@@ -24,7 +24,7 @@ import { appendSample, HISTORY_LIMIT, plotHistory } from "./lib/history";
 import {
   hasLatency,
   statistics,
-  groupScale,
+  groupRange,
   createWindowStatistics,
 } from "./lib/statistics";
 
@@ -45,8 +45,10 @@ const ProbePlot = memo(function ProbePlot({
   now,
   stats,
   scale,
+  lower,
 }: {
   scale: number;
+  lower: number;
   samples: Sample[];
   now: number;
   stats: ReturnType<typeof statistics>;
@@ -62,8 +64,20 @@ const ProbePlot = memo(function ProbePlot({
   const y = (sample: Sample) =>
     `${69 + ((Math.floor(sample.at) % 13) - 6) * 1.6}%`;
   const position = (value: number) =>
-    3 + (Math.min(scale, Math.max(0, value)) / scale) * 94;
+    3 +
+    ((Math.min(scale, Math.max(lower, value)) - lower) / (scale - lower)) * 94;
   const x = (value: number) => `${position(value)}%`;
+  // Label the bounds and an interior 50 ms tick without crowding narrow plots.
+  const ticks = [lower];
+  const middle = lower + Math.floor((scale - lower) / 100) * 50;
+  if (middle > lower) ticks.push(middle);
+  ticks.push(scale);
+  // One SVG path draws the 50 ms subdivisions without a node per tick.
+  const minorIntervals = (scale - lower) / 50;
+  const minorTicks = Array.from(
+    { length: minorIntervals + 1 },
+    (_, index) => `M${3 + (index / minorIntervals) * 94} 88V98`,
+  ).join(" ");
   const overflow = samples.filter(
     (sample) => hasLatency(sample) && sample.latency > scale,
   ).length;
@@ -72,6 +86,7 @@ const ProbePlot = memo(function ProbePlot({
       <svg
         className="boxplot"
         data-scale={scale}
+        data-min={lower}
         role="img"
         aria-label={`HTTP latency, ${stats.count} valid samples. Median ${number(stats.median)} ms, Q1 ${number(stats.q1)}, Q3 ${number(stats.q3)}. ${overflow} readings above ${scale} ms.`}
       >
@@ -84,7 +99,21 @@ const ProbePlot = memo(function ProbePlot({
           Box: Q1–Q3. Line: median. Whiskers: 1.5×IQR. Dots: measurements, older
           points fade. Linear axis, shared within this region.
         </title>
-        {[0, scale / 2, scale].map((tick) => (
+        <svg
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+          width="100%"
+          height="100%"
+          aria-hidden="true"
+        >
+          <path
+            className="plot-minor-ticks"
+            data-step="50"
+            d={minorTicks}
+            vectorEffect="non-scaling-stroke"
+          />
+        </svg>
+        {ticks.map((tick) => (
           <line
             className="plot-gridline"
             key={tick}
@@ -172,9 +201,9 @@ const ProbePlot = memo(function ProbePlot({
       </svg>
       <div
         className="plot-axis"
-        aria-label={`Linear 0–${scale} millisecond scale`}
+        aria-label={`Linear ${lower}–${scale} millisecond scale`}
       >
-        {[0, scale / 2, scale].map((tick, i) => (
+        {ticks.map((tick, i) => (
           <span
             key={tick}
             style={{
@@ -182,13 +211,13 @@ const ProbePlot = memo(function ProbePlot({
               transform:
                 i === 0
                   ? "none"
-                  : i === 2
+                  : i === ticks.length - 1
                     ? "translateX(-100%)"
                     : "translateX(-50%)",
             }}
           >
             {tick >= 1000 ? `${tick / 1000}k` : tick}
-            {i === 2 ? " ms" : ""}
+            {i === ticks.length - 1 ? " ms" : ""}
           </span>
         ))}
       </div>
@@ -369,16 +398,16 @@ export default function App() {
       return [target.id, { h, recent, stats }];
     }),
   );
-  const scales = Object.fromEntries(
+  const ranges = Object.fromEntries(
     (["cn", "global"] as const).map((region) => [
       region,
-      groupScale(
+      groupRange(
         TARGETS.filter((target) => target.region === region).map(
-          (target) => summaries[target.id].stats.p95,
+          (target) => summaries[target.id].stats,
         ),
       ),
     ]),
-  ) as Record<"cn" | "global", number>;
+  ) as Record<"cn" | "global", { min: number; max: number }>;
   const total = Object.values(history).reduce((sum, h) => sum + h.total, 0);
   const failures = Object.values(history).reduce(
     (sum, h) => sum + h.failures,
@@ -553,47 +582,32 @@ export default function App() {
                     className="exit-geography"
                     aria-label={`${region === "china" ? "China" : "International"} exit location`}
                   >
-                    {(["location", "network", "timezone"] as const).map(
-                      (field) => {
-                        const geo = locations[region];
-                        const text = !showAddresses
-                          ? "Hidden"
-                          : geo?.status === "ok"
-                            ? geo[field] || "Unavailable"
-                            : geo?.status === "unavailable"
-                              ? "Unavailable"
-                              : "Checking…";
-                        return (
-                          <div className={`geo-row geo-${field}`} key={field}>
-                            <span className="geo-label">
-                              {field === "location"
-                                ? "Location"
-                                : field === "network"
-                                  ? "Network"
-                                  : "Time zone"}
-                            </span>
-                            <span title={showAddresses ? text : undefined}>
-                              {text}
-                            </span>
-                          </div>
-                        );
-                      },
-                    )}
-                    <span className="geo-source">
-                      {locations[region]?.family
-                        ? locations[region]?.family === "ipv6"
-                          ? "IPv6"
-                          : "IPv4"
-                        : "Location"}{" "}
-                      ·{" "}
-                      <a
-                        href="https://ipinfo.io"
-                        target="_blank"
-                        rel="noreferrer"
-                      >
-                        IPinfo
-                      </a>
-                    </span>
+                    {(["location", "network"] as const).map((field) => {
+                      const geo = locations[region];
+                      const text = !showAddresses
+                        ? "Hidden"
+                        : geo?.status === "ok"
+                          ? geo[field] || "Unavailable"
+                          : geo?.status === "unavailable"
+                            ? "Unavailable"
+                            : "Checking…";
+                      return (
+                        <div className={`geo-row geo-${field}`} key={field}>
+                          <span className="geo-label">
+                            {field === "location" ? "Location" : "Network"}
+                          </span>
+                          <span
+                            title={
+                              showAddresses
+                                ? `${geo?.family === "ipv6" ? "IPv6" : "IPv4"} ${field}: ${text}`
+                                : undefined
+                            }
+                          >
+                            {text}
+                          </span>
+                        </div>
+                      );
+                    })}
                   </div>
                 </Card>
               );
@@ -617,11 +631,6 @@ export default function App() {
                   )}{" "}
                   {region === "cn" ? "China" : "International"}
                 </h2>
-                <span className="plot-legend">
-                  <span className="legend-old" />
-                  <span className="legend-new" />
-                  last {WINDOW_MINUTES}m
-                </span>
               </div>
               <div className="probe-grid">
                 {TARGETS.filter((target) => target.region === region).map(
@@ -699,7 +708,8 @@ export default function App() {
                           samples={recent}
                           now={Math.max(opacityNow, recent.at(-1)?.at ?? 0)}
                           stats={stats}
-                          scale={scales[region]}
+                          scale={ranges[region].max}
+                          lower={ranges[region].min}
                         />
                         <div className="probe-footer">
                           <div className="probe-stats">
