@@ -665,10 +665,10 @@ test("uses a three-second default and accepts manually entered sampling interval
   await advanceProbeCycles(page, session.requests, 1, 1.5);
 });
 
-test("keeps measuring beyond sixty attempts and bounds plots and exported history", async ({
+test("keeps sampling beyond 120 points with stable marks, arrival rings and bounded history", async ({
   page,
 }) => {
-  test.setTimeout(60_000);
+  test.setTimeout(90_000);
   await installClock(page);
   const session = await mockNetwork(page);
   await page.goto("/");
@@ -677,7 +677,7 @@ test("keeps measuring beyond sixty attempts and bounds plots and exported histor
     0,
   );
   await expect(page.locator(".latency-dot.is-probing")).toHaveCount(0);
-  await advanceProbeCycles(page, session.requests, 61);
+  await advanceProbeCycles(page, session.requests, 125);
 
   for (const name of [
     "Cloudflare",
@@ -696,6 +696,99 @@ test("keeps measuring beyond sixty attempts and bounds plots and exported histor
     await expect(card.locator("rect.iqr-box")).toHaveCount(1);
     await expect(card.locator(".median-line")).toHaveCount(1);
   }
+
+  // Keep actual DOM references so a keyed remount cannot masquerade as stability.
+  await page.locator("circle.sample-point").evaluateAll((points) => {
+    const state = window as Window & {
+      __pointSnapshot?: Map<
+        string,
+        {
+          node: Element;
+          cx: string | null;
+          cy: string | null;
+          scale: string | null;
+        }
+      >;
+    };
+    state.__pointSnapshot = new Map(
+      points.map((point) => [
+        `${point.closest("article")!.querySelector(".probe-name")!.textContent}:${point.getAttribute("data-sample-key")}`,
+        {
+          node: point,
+          cx: point.getAttribute("cx"),
+          cy: point.getAttribute("cy"),
+          scale: point.closest("svg")!.getAttribute("data-scale"),
+        },
+      ]),
+    );
+  });
+  await advanceProbeCycles(page, session.requests, 1);
+  const stability = await page
+    .locator("circle.sample-point")
+    .evaluateAll((points) => {
+      const state = window as Window & {
+        __pointSnapshot?: Map<
+          string,
+          {
+            node: Element;
+            cx: string | null;
+            cy: string | null;
+            scale: string | null;
+          }
+        >;
+      };
+      let retained = 0;
+      let stable = true;
+      for (const point of points) {
+        const key = `${point.closest("article")!.querySelector(".probe-name")!.textContent}:${point.getAttribute("data-sample-key")}`;
+        const old = state.__pointSnapshot!.get(key);
+        if (!old) continue;
+        retained++;
+        if (old.node !== point || old.cy !== point.getAttribute("cy"))
+          stable = false;
+        if (
+          old.scale === point.closest("svg")!.getAttribute("data-scale") &&
+          old.cx !== point.getAttribute("cx")
+        )
+          stable = false;
+      }
+      delete state.__pointSnapshot;
+      return { retained, stable };
+    });
+  expect(stability.retained).toBeGreaterThanOrEqual(8 * (120 - 4));
+  expect(stability.stable).toBe(true);
+  await expect(page.locator("circle.sample-ripple")).toHaveCount(8);
+  for (const card of await page.locator("article.probe-card").all()) {
+    const latest = card.locator("circle.sample-point.is-latest");
+    const ripple = card.locator("circle.sample-ripple");
+    await expect(ripple).toHaveAttribute(
+      "data-sample-key",
+      (await latest.getAttribute("data-sample-key"))!,
+    );
+    await expect(ripple).toHaveAttribute(
+      "cx",
+      (await latest.getAttribute("cx"))!,
+    );
+    await expect(ripple).toHaveAttribute(
+      "cy",
+      (await latest.getAttribute("cy"))!,
+    );
+    expect(
+      await ripple.evaluate(
+        (node) => getComputedStyle(node).animationIterationCount,
+      ),
+    ).toBe("1");
+  }
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  expect(
+    await page
+      .locator("circle.sample-ripple")
+      .first()
+      .evaluate((node) => ({
+        animation: getComputedStyle(node).animationName,
+        opacity: getComputedStyle(node).opacity,
+      })),
+  ).toEqual({ animation: "none", opacity: "0" });
 
   const opacity = await page
     .locator("circle.sample-point")
@@ -820,6 +913,7 @@ test("uses a changing shared scale per region and shows probe failures without l
   );
   await expect(cloudflare.locator(".reading-state")).toHaveText("No reply");
   await expect(cloudflare).toHaveClass(/is-unreachable/);
+  await expect(cloudflare.locator(".sample-ripple")).toHaveCount(0);
   await expect(cloudflare.locator(".latency-dot")).toHaveAttribute(
     "aria-label",
     "Failed",

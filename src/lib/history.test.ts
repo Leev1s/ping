@@ -70,7 +70,7 @@ describe("bounded probe history", () => {
     expect(plotted.at(-1)?.sample.at).toBe(1_000);
   });
 
-  it("keeps latency extrema when evenly spaced marks would skip them", () => {
+  it("keeps latency extrema alongside stable-priority marks", () => {
     const samples = Array.from({ length: 1_000 }, (_, index) =>
       sample(index + 1, 25),
     );
@@ -92,5 +92,51 @@ describe("bounded probe history", () => {
     expect(plotted[1].opacity).toBeCloseTo(0.37);
     expect(plotted[2].opacity).toBeCloseTo(0.79);
     expect(plotted[2].opacity).toBeGreaterThan(plotted[0].opacity);
+  });
+  it("keeps nearly all displayed samples when one measurement arrives above the point cap", () => {
+    const samples = Array.from({ length: 1_000 }, (_, index) =>
+      sample(index + 1, (index * 17) % 400),
+    );
+    const before = plotHistory(samples, 1_000, 2_000);
+    const after = plotHistory([...samples, sample(1_001, 123)], 1_001, 2_000);
+    const old = new Map(before.map((point) => [point.key, point.sample]));
+    const retained = after.filter((point) => old.has(point.key));
+    expect(retained.length).toBeGreaterThanOrEqual(PLOT_POINT_LIMIT - 4);
+    for (const point of retained) expect(point.sample).toBe(old.get(point.key));
+    expect(after.at(-1)?.sample.at).toBe(1_001);
+  });
+
+  it("keeps selection stable as points fade, and changes only a few marks when the window advances", () => {
+    const samples = Array.from({ length: 1_000 }, (_, index) =>
+      sample(index + 1),
+    );
+    const before = plotHistory(samples, 1_000, 1_000);
+    const aged = plotHistory(samples, 1_000.5, 1_000);
+    expect(aged.map((point) => point.key)).toEqual(
+      before.map((point) => point.key),
+    );
+    const advanced = plotHistory(samples, 1_001.5, 1_000);
+    const keys = new Set(before.map((point) => point.key));
+    expect(
+      advanced.filter((point) => keys.has(point.key)).length,
+    ).toBeGreaterThanOrEqual(PLOT_POINT_LIMIT - 4);
+  });
+
+  it("gives coincident duplicate records one mark without changing raw history", () => {
+    const samples = [sample(1, 10), sample(1, 10), sample(2, 20)];
+    const marks = plotHistory(samples, 2, 10);
+    expect(marks).toHaveLength(2);
+    expect(new Set(marks.map((point) => point.key)).size).toBe(2);
+    expect(samples).toHaveLength(3);
+    expect(plotHistory(samples, 2, 10, 0.5)).toEqual([]);
+  });
+  it("keeps the recent tail visible before selecting older marks by priority", () => {
+    const samples = Array.from({ length: 1_000 }, (_, index) =>
+      sample(index + 1),
+    );
+    const marks = new Set(
+      plotHistory(samples, 1_000, 2_000).map((point) => point.sample.at),
+    );
+    for (let at = 977; at <= 1_000; at++) expect(marks.has(at)).toBe(true);
   });
 });

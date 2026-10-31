@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import {
   ArrowDownToLine,
   Check,
@@ -52,11 +52,16 @@ function ProbePlot({
   now: number;
   stats: ReturnType<typeof statistics>;
 }) {
+  const rippleClip = useId();
   const marks = plotHistory(
     samples.filter(hasLatency),
     now,
     WINDOW_MINUTES * 60000,
   );
+  const latest = samples.at(-1);
+  const newest = latest && hasLatency(latest) ? marks.at(-1) : undefined;
+  const y = (sample: Sample) =>
+    `${69 + ((Math.floor(sample.at) % 13) - 6) * 1.6}%`;
   const position = (value: number) =>
     3 + (Math.min(scale, Math.max(0, value)) / scale) * 94;
   const x = (value: number) => `${position(value)}%`;
@@ -71,6 +76,11 @@ function ProbePlot({
         role="img"
         aria-label={`HTTP latency, ${stats.count} valid samples. Median ${number(stats.median)} ms, Q1 ${number(stats.q1)}, Q3 ${number(stats.q3)}. ${overflow} readings above ${scale} ms.`}
       >
+        <defs>
+          <clipPath id={rippleClip}>
+            <rect width="100%" height="100%" />
+          </clipPath>
+        </defs>
         <title>
           Box: Q1–Q3. Line: median. Whiskers: 1.5×IQR. Dots: measurements, older
           points fade. Linear axis, shared within this region.
@@ -125,12 +135,13 @@ function ProbePlot({
               />
             </>
           )}
-        {marks.map(({ sample, opacity }, i) => (
+        {marks.map(({ key, sample, opacity }) => (
           <circle
-            className={`sample-point ${sample.latency! > scale ? "is-overflow" : ""}`}
-            key={`${sample.at}-${i}`}
+            className={`sample-point ${sample.latency! > scale ? "is-overflow" : ""} ${key === newest?.key ? "is-latest" : ""}`}
+            key={key}
+            data-sample-key={key}
             cx={x(sample.latency!)}
-            cy={`${69 + ((Math.floor(sample.at) % 13) - 6) * 1.6}%`}
+            cy={y(sample)}
             r="2"
             opacity={opacity}
           >
@@ -139,6 +150,18 @@ function ProbePlot({
             </title>
           </circle>
         ))}
+        {newest && (
+          <g clipPath={`url(#${rippleClip})`} aria-hidden="true">
+            <circle
+              key={newest.key}
+              className={`sample-ripple ${newest.sample.latency! > scale ? "is-overflow" : ""}`}
+              data-sample-key={newest.key}
+              cx={x(newest.sample.latency!)}
+              cy={y(newest.sample)}
+              r="2"
+            />
+          </g>
+        )}
         {overflow > 0 && (
           <path
             className="overflow-marker"

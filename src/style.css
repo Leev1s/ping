@@ -1390,3 +1390,38 @@ main {
     min-height: 145px;
   }
 }
+
+/* A single arrival ring; retained sample nodes never restart this animation. */
+.sample-point.is-latest {
+  stroke: var(--surface);
+  stroke-width: 0.6px;
+}
+.sample-ripple {
+  fill: none;
+  stroke: var(--point);
+  stroke-width: 1.5px;
+  opacity: 0;
+  pointer-events: none;
+  animation: sample-arrival 900ms ease-out both;
+}
+.sample-ripple.is-overflow {
+  stroke: var(--warning);
+}
+@keyframes sample-arrival {
+  from {
+    r: 2px;
+    opacity: 0.8;
+    stroke-width: 1.5px;
+  }
+  to {
+    r: 10px;
+    opacity: 0;
+    stroke-width: 0.5px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sample-ripple {
+    animation: none;
+    opacity: 0;
+  }
+}
