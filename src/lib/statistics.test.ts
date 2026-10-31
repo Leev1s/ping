@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { statistics, groupScale } from "./statistics";
+import { statistics, groupScale, createWindowStatistics } from "./statistics";
 import type { Sample } from "./network";
 const samples = (values: number[]): Sample[] =>
   values.map((latency, at) => ({ latency, at, outcome: "ok" }));
@@ -80,5 +80,31 @@ describe("shared regional scale", () => {
     expect(groupScale([NaN, Infinity, -1])).toBe(100);
     expect(groupScale([500.1, 100])).toBe(600);
     expect(groupScale([99.9, 100])).toBe(100);
+  });
+});
+
+describe("cached window statistics", () => {
+  it("reuses summaries until data changes or the oldest record leaves the inclusive window", () => {
+    const summarize = createWindowStatistics(100);
+    const data = samples([10, 20]);
+    const first = summarize(data, 50);
+    expect(summarize(data, 100)).toBe(first);
+    expect(summarize(data, 101).stats.count).toBe(1);
+    expect(
+      summarize([...data, { at: 101, latency: 30, outcome: "ok" }], 101).stats
+        .count,
+    ).toBe(2);
+  });
+  it("includes future records when time catches up and recalculates after a clock rollback", () => {
+    const summarize = createWindowStatistics(100);
+    const data: Sample[] = [
+      { at: 50, latency: 10, outcome: "ok" },
+      { at: 70, latency: 20, outcome: "ok" },
+    ];
+    const initial = summarize(data, 60);
+    expect(summarize(data, 69)).toBe(initial);
+    expect(summarize(data, 70).stats.count).toBe(2);
+    expect(summarize(data, 40).stats.count).toBe(0);
+    expect(summarize(data, 50).stats.count).toBe(1);
   });
 });

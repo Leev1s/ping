@@ -35,3 +35,5 @@ Sources: [MDN JavaScript memory management](https://developer.mozilla.org/en-US/
 The raw-history cap is internal memory management, not a measurement limit. The status bar shows cumulative session measurements and elapsed time, without a retained/cap meter. First requests are warm-up and do not enter retained history or counters.
 
 A new valid measurement receives one clipped 900 ms expansion ring at its actual point location. Clock ticks, theme changes and failed attempts do not retrigger the ring. There is at most one ring per probe, and reduced-motion preferences disable it. Dynamic regional range changes still reproject points onto the correct numeric scale.
+
+Rendering reuses unchanged plot subtrees. The five-second opacity clock only affects subtle visual fading; new measurements appear immediately. Statistical window summaries expire at their next exact eligibility boundary, independently of that visual clock. Filtering chronological streams avoids allocating per-record wrapper objects or sorting them again.

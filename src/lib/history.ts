@@ -38,17 +38,20 @@ export function selectRecentHistory(
   }
 
   const start = now - windowMs;
-  return samples
-    .map((sample, index) => ({ sample, index }))
-    .filter(
-      ({ sample }) =>
-        Number.isFinite(sample.at) && sample.at >= start && sample.at <= now,
+  const recent = samples.filter(
+    (sample) =>
+      Number.isFinite(sample.at) && sample.at >= start && sample.at <= now,
+  );
+  // Appends are normally chronological; avoid allocating wrapper objects and
+  // sorting the whole stream again unless a clock adjustment changed its order.
+  if (
+    recent.some(
+      (sample, index) => index > 0 && sample.at < recent[index - 1].at,
     )
-    .sort(
-      (left, right) =>
-        left.sample.at - right.sample.at || left.index - right.index,
-    )
-    .map(({ sample }) => sample);
+  ) {
+    recent.sort((left, right) => left.at - right.at);
+  }
+  return recent;
 }
 
 export type PlotSample = {

@@ -1,4 +1,5 @@
 import type { Sample } from "./network";
+import { selectRecentHistory } from "./history";
 
 export function hasLatency(
   sample: Sample,
@@ -69,4 +70,33 @@ export function groupScale(p95s: readonly (number | null)[]): number {
     (n): n is number => n !== null && Number.isFinite(n) && n >= 0,
   );
   return Math.max(100, Math.ceil(Math.max(0, ...valid) / 100) * 100);
+}
+
+/** One bounded cache per probe; invalidate on new data or an exact window boundary. */
+export function createWindowStatistics(windowMs: number) {
+  let previous:
+    | {
+        samples: readonly Sample[];
+        now: number;
+        changesAt: number;
+        recent: Sample[];
+        stats: ReturnType<typeof statistics>;
+      }
+    | undefined;
+  return (samples: readonly Sample[], now: number) => {
+    if (
+      previous &&
+      previous.samples === samples &&
+      now >= previous.now &&
+      now < previous.changesAt
+    )
+      return previous;
+    const recent = selectRecentHistory(samples, now, windowMs);
+    let changesAt = recent.length ? recent[0].at + windowMs + 1 : Infinity;
+    // Future records can become eligible after a system-clock adjustment.
+    for (const sample of samples)
+      if (sample.at > now) changesAt = Math.min(changesAt, sample.at);
+    previous = { samples, now, changesAt, recent, stats: statistics(recent) };
+    return previous;
+  };
 }

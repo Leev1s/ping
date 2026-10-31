@@ -51,4 +51,6 @@ These checks define observable behavior for the single-page application. Browser
 
 ## Verification record
 
-Current local verification: TypeScript check, 34 unit tests, 8 Playwright acceptance tests and rendered-layout checks pass. The tests include initial warm-up exclusion, continuous sampling, per-100 ms regional bounds, default-visible IPs with masking/copy, family-specific geolocation and rate-limit isolation, the two-icon header and footer Live control, stable point identity above 120 marks, one-shot arrival rings and reduced motion. Browser suspension limits remain documented in [BACKGROUND.md](BACKGROUND.md).
+Current local verification: TypeScript check, 36 unit tests, 8 Playwright acceptance tests and rendered-layout checks pass. The tests include initial warm-up exclusion, continuous sampling, per-100 ms regional bounds, default-visible IPs with masking/copy, family-specific geolocation and rate-limit isolation, the two-icon header and footer Live control, stable point identity above 120 marks, one-shot arrival rings and reduced motion. Browser suspension limits remain documented in [BACKGROUND.md](BACKGROUND.md).
+
+Runtime performance checks use a production build with locally intercepted requests, wall-clock measurement windows and separate post-GC retained-memory snapshots. Functional browser tests run separately to avoid contention. See [PERFORMANCE.md](PERFORMANCE.md) for the evidence and metric limits.

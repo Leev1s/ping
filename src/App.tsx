@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { memo, useEffect, useId, useRef, useState } from "react";
 import {
   ArrowDownToLine,
   Check,
@@ -13,7 +13,6 @@ import {
 } from "lucide-react";
 import { ThemePicker, isTheme, type Theme } from "./components/theme-picker";
 import { MagicCard } from "./components/magicui/magic-card";
-import { NumberTicker } from "./components/magicui/number-ticker";
 import { TARGETS, probe, type Sample, type ProbeTarget } from "./lib/network";
 import {
   fetchConnectionInfo,
@@ -21,13 +20,13 @@ import {
   type LocationReport,
   type ConnectionReport,
 } from "./lib/connection";
+import { appendSample, HISTORY_LIMIT, plotHistory } from "./lib/history";
 import {
-  appendSample,
-  HISTORY_LIMIT,
-  plotHistory,
-  selectRecentHistory,
-} from "./lib/history";
-import { hasLatency, statistics, groupScale } from "./lib/statistics";
+  hasLatency,
+  statistics,
+  groupScale,
+  createWindowStatistics,
+} from "./lib/statistics";
 
 const WINDOW_MINUTES = 30;
 type ProbeHistory = { samples: Sample[]; total: number; failures: number };
@@ -41,7 +40,7 @@ const EMPTY: ProbeHistory = { samples: [], total: 0, failures: 0 };
 const number = (value: number | null) =>
   value === null ? "—" : Math.round(value).toLocaleString("en-US");
 
-function ProbePlot({
+const ProbePlot = memo(function ProbePlot({
   samples,
   now,
   stats,
@@ -195,7 +194,7 @@ function ProbePlot({
       </div>
     </div>
   );
-}
+});
 
 export default function App() {
   const [paused, setPaused] = useState(false);
@@ -356,15 +355,18 @@ export default function App() {
     const timer = setTimeout(() => setNotice(""), 2200);
     return () => clearTimeout(timer);
   }, [notice]);
+  const windowCaches = useRef<
+    Record<string, ReturnType<typeof createWindowStatistics>>
+  >({});
+  // New samples render immediately; slow visual aging needs no per-second chart work.
+  const opacityNow = Math.floor(now / 5000) * 5000;
   const summaries = Object.fromEntries(
     TARGETS.map((target) => {
       const h = history[target.id] ?? EMPTY;
-      const recent = selectRecentHistory(
-        h.samples,
-        now,
-        WINDOW_MINUTES * 60000,
-      );
-      return [target.id, { h, recent, stats: statistics(recent) }];
+      const summarize = (windowCaches.current[target.id] ??=
+        createWindowStatistics(WINDOW_MINUTES * 60000));
+      const { recent, stats } = summarize(h.samples, now);
+      return [target.id, { h, recent, stats }];
     }),
   );
   const scales = Object.fromEntries(
@@ -687,7 +689,7 @@ export default function App() {
                                     : state}
                                 </span>
                               ) : (
-                                <NumberTicker value={Math.round(value)} />
+                                Math.round(value)
                               )}
                             </strong>
                             <span>{value === null ? "" : "ms"}</span>
@@ -695,7 +697,7 @@ export default function App() {
                         </div>
                         <ProbePlot
                           samples={recent}
-                          now={now}
+                          now={Math.max(opacityNow, recent.at(-1)?.at ?? 0)}
                           stats={stats}
                           scale={scales[region]}
                         />
