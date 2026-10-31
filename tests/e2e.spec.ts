@@ -226,10 +226,21 @@ async function advanceProbeCycles(
   if (seconds >= 4.5)
     throw new Error("Use a sub-timeout sample interval in e2e");
   let expectedRequests = requests.length;
+  let expectedCompleted = parseCount(
+    await page.locator(".session-total").innerText(),
+  );
   for (let cycle = 0; cycle < cycles; cycle += 1) {
     expectedRequests += probeHosts.length;
+    expectedCompleted += probeHosts.length;
     await page.clock.fastForward(seconds * 1_000 + 100);
     await waitForRequests(requests, expectedRequests);
+    await expect
+      .poll(
+        () => page.locator(".session-total").innerText().then(parseCount),
+        { timeout: 7_000 },
+      )
+      .toBeGreaterThanOrEqual(expectedCompleted);
+    await expect(page.locator(".latency-dot.is-probing")).toHaveCount(0);
   }
 }
 
