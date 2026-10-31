@@ -2,7 +2,7 @@ import { expect, test, type Locator, type Page } from "@playwright/test";
 
 const probeHosts = [
   "speed.cloudflare.com",
-  "www.gstatic.com",
+  "cdn.jsdelivr.net",
   "github.com",
   "www.bing.com",
   "www.baidu.com",
@@ -180,40 +180,10 @@ async function advanceProbeCycles(
   }
 }
 
-async function setSamplingInterval(
-  page: Page,
-  requests: string[],
-  value: "3" | "5" | "10",
-) {
-  await page.getByRole("button", { name: /more/i }).click();
-  const menu = page.getByRole("dialog", { name: "More options" });
-  await expect(menu).toBeVisible();
-  const interval = menu.getByLabel("Sampling interval");
-  const previousValue = await interval.inputValue();
-  const previousRequests = requests.length;
-  if (previousValue !== value) await interval.selectOption(value);
-  await menu.getByRole("button", { name: "Close menu" }).click();
-  if (previousValue !== value) {
-    await waitForRequests(requests, previousRequests + probeHosts.length);
-  }
-}
-
-async function togglePlotScale(page: Page) {
-  await page.getByRole("button", { name: /more/i }).click();
-  const menu = page.getByRole("dialog", { name: "More options" });
-  await expect(menu).toBeVisible();
-  await menu.getByRole("button", { name: /plot scale/i }).click();
-  if (await menu.isVisible()) {
-    await menu.getByRole("button", { name: "Close menu" }).click();
-  }
-}
-
 function cardFor(page: Page, name: string): Locator {
-  return page
-    .locator("article.probe-card")
-    .filter({
-      has: page.locator(".probe-name", { hasText: new RegExp(name) }),
-    });
+  return page.locator("article.probe-card").filter({
+    has: page.locator(".probe-name", { hasText: new RegExp(name) }),
+  });
 }
 
 async function clickMoreAction(page: Page, name: string) {
@@ -241,6 +211,8 @@ async function readDownload(page: Page, action: string) {
       total: number;
       failures: number;
     }>;
+    windowMinutes: number;
+    retentionLimit: number;
   };
 }
 
@@ -253,8 +225,27 @@ async function geometry(page: Page) {
     return {
       cards: [...document.querySelectorAll("article.probe-card")].map(rect),
       plots: [...document.querySelectorAll("svg.boxplot")].map(rect),
+      connections: [...document.querySelectorAll(".connection-card")].map(rect),
     };
   });
+}
+
+function contrastRatio(foreground: string, background: string): number {
+  const luminance = (color: string) => {
+    const hex = color.trim().match(/^#([\da-f]{6})$/i)?.[1];
+    if (!hex)
+      throw new Error(`Expected a computed six-digit hex color, got ${color}`);
+    const channels = [0, 2, 4].map(
+      (index) => Number.parseInt(hex.slice(index, index + 2), 16) / 255,
+    );
+    const [r, g, b] = channels.map((value) =>
+      value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4,
+    );
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const first = luminance(foreground);
+  const second = luminance(background);
+  return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05);
 }
 
 function parseCount(text: string): number {
@@ -262,7 +253,7 @@ function parseCount(text: string): number {
   return firstCount ? Number(firstCount.replaceAll(",", "")) : 0;
 }
 
-test("shows eight English probe cards, two independent IP sources, and no extra API calls", async ({
+test("shows eight English probes, two independent IP sources, and the ordered toolbar", async ({
   page,
 }) => {
   const session = await mockNetwork(page);
@@ -277,6 +268,46 @@ test("shows eight English probe cards, two independent IP sources, and no extra 
   await expect(page.locator(".probe-latest")).toHaveCount(8);
   await expect(page.locator(".probe-stats")).toHaveCount(8);
   await expect(page.locator("svg.boxplot")).toHaveCount(8);
+  await expect(page.locator(".p95-value")).toHaveCount(8);
+  await expect
+    .poll(async () => page.locator(".p95-value").first().innerText())
+    .toMatch(/~/);
+  for (const value of await page.locator(".p95-value").all()) {
+    await expect(value).toHaveText(/~\s*\d/);
+  }
+
+  const toolbarControls = page.locator(".toolbar button, .toolbar select");
+  await expect(toolbarControls).toHaveCount(3);
+  await expect(toolbarControls.nth(0)).toHaveClass(/live-control/);
+  await expect(toolbarControls.nth(0)).toHaveAttribute(
+    "title",
+    /Pause sampling/,
+  );
+  await expect(toolbarControls.nth(0).locator("svg")).toHaveCount(1);
+  await expect(toolbarControls.nth(0).locator(".cadence")).toHaveText("3s");
+  await expect(toolbarControls.nth(1)).toHaveAttribute("aria-label", "Theme");
+  await expect(toolbarControls.nth(2)).toHaveAttribute(
+    "aria-label",
+    "More options",
+  );
+  expect(
+    await toolbarControls
+      .nth(1)
+      .locator("option")
+      .evaluateAll((options) =>
+        options.map((option) => (option as HTMLOptionElement).value),
+      ),
+  ).toEqual(["light", "dark", "gruvbox", "nord"]);
+  await expect(page.locator(".plot-axis").first()).toHaveAttribute(
+    "aria-label",
+    "Fixed linear 0–1000 millisecond scale",
+  );
+  expect(
+    (
+      await page.locator(".plot-axis").first().locator("span").allTextContents()
+    ).map((tick) => tick.trim()),
+  ).toEqual(["0", "250", "500", "750", "1k ms"]);
+
   await expect(
     page.locator(".connection-panel article.connection-card"),
   ).toHaveCount(2);
@@ -293,7 +324,7 @@ test("shows eight English probe cards, two independent IP sources, and no extra 
   expect(new Set(names)).toEqual(
     new Set([
       "Cloudflare",
-      "Google",
+      "jsDelivr",
       "GitHub",
       "Microsoft",
       "Baidu",
@@ -338,6 +369,31 @@ test("shows eight English probe cards, two independent IP sources, and no extra 
       ].includes(host),
   );
   expect(unexpectedHosts).toEqual([]);
+  expect(countHost(session.requests, "www.gstatic.com")).toBe(0);
+
+  await page.getByRole("button", { name: "More options" }).click();
+  const options = page.getByRole("dialog", { name: "More options" });
+  await expect(options).toBeVisible();
+  await expect(options.getByLabel("History window")).toHaveCount(0);
+  await expect(
+    options.getByRole("button", { name: /plot scale/i }),
+  ).toHaveCount(0);
+  await page.keyboard.press("Escape");
+
+  const ipCards = page.locator("article.connection-card");
+  await expect(ipCards).toHaveCount(2);
+  const magicIpCard = page.locator(
+    'article.connection-card.magic-card[data-provider="ipinfo"]',
+  );
+  await expect(magicIpCard).toHaveCount(1);
+  await expect(
+    page.locator('.connection-card[data-provider="cloudflare"].magic-card'),
+  ).toHaveCount(0);
+  const glow = magicIpCard.locator(":scope > .magic-card-glow");
+  await expect(glow).toHaveCount(1);
+  await expect
+    .poll(() => glow.evaluate((element) => getComputedStyle(element).position))
+    .toBe("absolute");
 
   await page.getByRole("button", { name: "Show addresses" }).click();
   const cloudflareCard = page.locator(
@@ -361,6 +417,9 @@ test("shows eight English probe cards, two independent IP sources, and no extra 
   );
   await expect(cloudflareCard.locator(".network-organization")).toHaveCount(0);
   await expect(ipinfoCard.locator(".edge-value")).toHaveCount(0);
+  const beforeGlow = await geometry(page);
+  await magicIpCard.hover();
+  expect(await geometry(page)).toEqual(beforeGlow);
 
   await page.getByRole("button", { name: "Hide addresses" }).click();
   expect(
@@ -375,7 +434,9 @@ test("shows eight English probe cards, two independent IP sources, and no extra 
     cloudflare: countHost(session.requests, cloudflareHost),
     ipinfo: countHost(session.requests, ipinfoHost),
   };
-  await clickMoreAction(page, "Refresh connection info");
+  await page
+    .getByRole("button", { name: "Refresh connection info", exact: true })
+    .click();
   await waitForHostRequests(
     session.requests,
     cloudflareHost,
@@ -394,6 +455,55 @@ test("shows eight English probe cards, two independent IP sources, and no extra 
   );
 });
 
+test("uses a three-second default and accepts validated fractional sampling intervals", async ({
+  page,
+}) => {
+  await page.clock.install({ time: new Date("2026-10-31T00:00:00.000Z") });
+  await page.addInitScript(() => {
+    localStorage.setItem("ping-interval", "10");
+  });
+  const session = await mockNetwork(page);
+  await page.goto("/");
+  await waitForAllProbes(session.requests);
+  await expect(page.locator(".live-control .cadence")).toHaveText("3s");
+
+  await page.getByRole("button", { name: "More options" }).click();
+  const menu = page.getByRole("dialog", { name: "More options" });
+  await expect(menu).toBeVisible();
+  const interval = menu.getByLabel("Sampling interval");
+  await expect(interval).toHaveAttribute("type", "number");
+  await expect(interval).toHaveAttribute("min", "1");
+  await expect(interval).toHaveAttribute("max", "300");
+  await expect(interval).toHaveAttribute("step", "any");
+  await expect(interval).toHaveValue("3");
+  await expect(menu.getByLabel("History window")).toHaveCount(0);
+  await expect(menu.getByRole("button", { name: /plot scale/i })).toHaveCount(
+    0,
+  );
+
+  const storedBeforeInvalid = await page.evaluate(() =>
+    localStorage.getItem("ping-interval-seconds"),
+  );
+  await interval.fill("0");
+  await menu.getByRole("button", { name: "Apply interval" }).click();
+  await expect(menu).toBeVisible();
+  await expect(page.locator(".live-control .cadence")).toHaveText("3s");
+  expect(
+    await page.evaluate(() => localStorage.getItem("ping-interval-seconds")),
+  ).toBe(storedBeforeInvalid);
+
+  const beforeApply = session.requests.length;
+  await interval.fill("1.5");
+  await menu.getByRole("button", { name: "Apply interval" }).click();
+  await expect(menu).not.toBeVisible();
+  await expect(page.locator(".live-control .cadence")).toHaveText("1.5s");
+  expect(
+    await page.evaluate(() => localStorage.getItem("ping-interval-seconds")),
+  ).toBe("1.5");
+  await waitForRequests(session.requests, beforeApply + probeHosts.length);
+  await advanceProbeCycles(page, session.requests, 1, 1.5);
+});
+
 test("keeps sampling beyond sixty attempts, bounds plotted marks, and exports bounded raw history", async ({
   page,
 }) => {
@@ -401,15 +511,13 @@ test("keeps sampling beyond sixty attempts, bounds plotted marks, and exports bo
   const session = await mockNetwork(page);
   await page.goto("/");
   await waitForAllProbes(session.requests);
-  await setSamplingInterval(page, session.requests, "3");
   const interval = 3;
-  await page.getByLabel("History window").selectOption("60");
 
   await advanceProbeCycles(page, session.requests, 72, interval);
   await expect(page.locator("article.probe-card")).toHaveCount(8);
   for (const name of [
     "Cloudflare",
-    "Google",
+    "jsDelivr",
     "GitHub",
     "Microsoft",
     "Baidu",
@@ -447,6 +555,10 @@ test("keeps sampling beyond sixty attempts, bounds plotted marks, and exports bo
   expect(sessionTotal).toBeGreaterThan(8 * 60);
   expect(retainedTotal).toBeGreaterThan(8 * 60);
   expect(retainedTotal).toBeLessThanOrEqual(8 * 1_200);
+  for (const value of await page.locator(".p95-value").all()) {
+    await expect(value).not.toContainText("~");
+    await expect(value).toHaveText(/\d/);
+  }
   const maxInFlight = await page.evaluate(() =>
     Math.max(...Object.values((window as ProbeWindow).__probeMaxActive ?? {})),
   );
@@ -454,6 +566,8 @@ test("keeps sampling beyond sixty attempts, bounds plotted marks, and exports bo
 
   const payload = await readDownload(page, "Export data");
   expect(payload.targets).toHaveLength(8);
+  expect(payload.windowMinutes).toBe(30);
+  expect(payload.retentionLimit).toBe(1_200);
   for (const target of payload.targets) {
     expect(target.samples.length, target.id).toBeGreaterThan(60);
     expect(target.samples.length, target.id).toBeLessThanOrEqual(1_200);
@@ -465,7 +579,7 @@ test("keeps sampling beyond sixty attempts, bounds plotted marks, and exports bo
   expect(exported).not.toContain(testAddresses.ipinfo);
   for (const name of [
     "Cloudflare",
-    "Google",
+    "jsDelivr",
     "GitHub",
     "Microsoft",
     "Baidu",
@@ -479,7 +593,7 @@ test("keeps sampling beyond sixty attempts, bounds plotted marks, and exports bo
   }
 });
 
-test("keeps box plot geometry fixed through empty, outlier, scale, and failed samples", async ({
+test("keeps box plot and IP card geometry fixed through empty, outlier, and failed samples", async ({
   page,
 }) => {
   await installClock(page);
@@ -489,13 +603,15 @@ test("keeps box plot geometry fixed through empty, outlier, scale, and failed sa
   await page.evaluate(() => document.fonts.ready);
   const emptyGeometry = await geometry(page);
   await waitForAllProbes(session.requests);
-  await setSamplingInterval(page, session.requests, "3");
   const interval = 3;
   await advanceProbeCycles(page, session.requests, 6, interval);
   await new Promise((resolve) => setTimeout(resolve, 30));
   await expect(page.locator("rect.iqr-box")).toHaveCount(8);
   const populatedGeometry = await geometry(page);
   expect(populatedGeometry).toEqual(emptyGeometry);
+  expect(
+    await page.locator("svg.boxplot").first().getAttribute("data-scale"),
+  ).toBe("1000");
 
   const cloudflare = cardFor(page, "Cloudflare");
   const outlierRequestCount = countHost(
@@ -515,31 +631,23 @@ test("keeps box plot geometry fixed through empty, outlier, scale, and failed sa
       return Number.parseFloat(text.replace(/[^\d.]/g, "")) || 0;
     })
     .toBeGreaterThan(1_000);
+  await expect(
+    cloudflare.locator("circle.sample-point.is-overflow").last(),
+  ).toHaveAttribute("cx", /%$/);
+  expect(
+    Number.parseFloat(
+      (await cloudflare
+        .locator("circle.sample-point.is-overflow")
+        .last()
+        .getAttribute("cx")) ?? "NaN",
+    ),
+  ).toBeLessThanOrEqual(100);
+  expect(
+    await page.locator("svg.boxplot").first().getAttribute("data-scale"),
+  ).toBe("1000");
+  expect(await geometry(page)).toEqual(emptyGeometry);
   session.setScenario({});
   await page.getByRole("button", { name: "Pause" }).click();
-
-  const smallestScaleX = Number.parseFloat(
-    (await cloudflare
-      .locator("circle.sample-point")
-      .last()
-      .getAttribute("cx")) ?? "NaN",
-  );
-  expect(
-    await cloudflare.locator("svg.boxplot").getAttribute("data-scale"),
-  ).toBe("1000");
-  await togglePlotScale(page);
-  expect(
-    await cloudflare.locator("svg.boxplot").getAttribute("data-scale"),
-  ).toBe("5000");
-  const largerScaleX = Number.parseFloat(
-    (await cloudflare
-      .locator("circle.sample-point")
-      .last()
-      .getAttribute("cx")) ?? "NaN",
-  );
-  expect(largerScaleX).toBeLessThan(smallestScaleX);
-  expect(await geometry(page)).toEqual(emptyGeometry);
-  await togglePlotScale(page);
 
   const errorRequestCount = countHost(session.requests, "speed.cloudflare.com");
   session.setScenario({ errorHost: "speed.cloudflare.com" });
@@ -557,7 +665,7 @@ test("keeps box plot geometry fixed through empty, outlier, scale, and failed sa
   expect(await geometry(page)).toEqual(emptyGeometry);
 });
 
-test("keeps the single English page and three self-hosted fonts usable across common viewports", async ({
+test("keeps four themes, readable colors, three self-hosted fonts, and all content within common viewports", async ({
   page,
 }) => {
   const session = await mockNetwork(page);
@@ -613,34 +721,91 @@ test("keeps the single English page and three self-hosted fonts usable across co
     [1366, 768],
     [1440, 900],
   ];
+  const themeSelect = page.getByLabel("Theme");
+  const themes = ["light", "dark", "gruvbox", "nord"];
+  await expect(themeSelect.locator("option")).toHaveCount(themes.length);
+
   for (const [width, height] of viewports) {
     await page.setViewportSize({ width, height });
-    const dimensions = await page.evaluate(() => ({
-      width: document.documentElement.clientWidth,
-      height: document.documentElement.clientHeight,
-      scrollWidth: Math.max(
-        document.documentElement.scrollWidth,
-        document.body.scrollWidth,
-      ),
-      scrollHeight: Math.max(
-        document.documentElement.scrollHeight,
-        document.body.scrollHeight,
-      ),
-      cards: document.querySelectorAll("article.probe-card").length,
-      addresses: document.querySelectorAll(".connection-card .exit-address")
-        .length,
-    }));
-    expect(dimensions.cards, `${width}x${height} probe count`).toBe(8);
-    expect(dimensions.addresses, `${width}x${height} IP count`).toBe(2);
-    expect(
-      dimensions.scrollWidth,
-      `${width}x${height} horizontal scroll`,
-    ).toBeLessThanOrEqual(dimensions.width + 1);
-    expect(
-      dimensions.scrollHeight,
-      `${width}x${height} vertical scroll`,
-    ).toBeLessThanOrEqual(dimensions.height + 1);
+    let referenceGeometry: Awaited<ReturnType<typeof geometry>> | undefined;
+    for (const theme of themes) {
+      await themeSelect.selectOption(theme);
+      expect(await themeSelect.inputValue(), `${theme} selected`).toBe(theme);
+
+      const dimensions = await page.evaluate(() => ({
+        width: document.documentElement.clientWidth,
+        height: document.documentElement.clientHeight,
+        scrollWidth: Math.max(
+          document.documentElement.scrollWidth,
+          document.body.scrollWidth,
+        ),
+        scrollHeight: Math.max(
+          document.documentElement.scrollHeight,
+          document.body.scrollHeight,
+        ),
+        cards: document.querySelectorAll("article.probe-card").length,
+        addresses: document.querySelectorAll(".connection-card .exit-address")
+          .length,
+        contentInViewport: [
+          ...document.querySelectorAll(
+            ".topbar, .connection-card, article.probe-card, footer",
+          ),
+        ].every((element) => {
+          const rect = element.getBoundingClientRect();
+          return rect.top >= -1 && rect.bottom <= window.innerHeight + 1;
+        }),
+        colors: (() => {
+          const element = document.querySelector(".app-shell");
+          if (!element) throw new Error("App shell is missing");
+          const style = getComputedStyle(element);
+          return Object.fromEntries(
+            ["--ink", "--muted", "--danger", "--surface", "--canvas"].map(
+              (token) => [token, style.getPropertyValue(token).trim()],
+            ),
+          ) as Record<string, string>;
+        })(),
+      }));
+      expect(dimensions.cards, `${width}x${height} probe count`).toBe(8);
+      expect(dimensions.addresses, `${width}x${height} IP count`).toBe(2);
+      expect(
+        dimensions.contentInViewport,
+        `${width}x${height} content visibility in ${theme}`,
+      ).toBe(true);
+      expect(
+        dimensions.scrollWidth,
+        `${width}x${height} horizontal scroll in ${theme}`,
+      ).toBeLessThanOrEqual(dimensions.width + 1);
+      expect(
+        dimensions.scrollHeight,
+        `${width}x${height} vertical scroll in ${theme}`,
+      ).toBeLessThanOrEqual(dimensions.height + 1);
+      for (const foreground of ["--ink", "--muted", "--danger"]) {
+        for (const background of ["--surface", "--canvas"]) {
+          expect(
+            contrastRatio(
+              dimensions.colors[foreground],
+              dimensions.colors[background],
+            ),
+            `${theme} ${foreground} on ${background} contrast`,
+          ).toBeGreaterThanOrEqual(4.5);
+        }
+      }
+
+      const currentGeometry = await geometry(page);
+      if (referenceGeometry) {
+        expect(
+          currentGeometry,
+          `${theme} layout at ${width}x${height}`,
+        ).toEqual(referenceGeometry);
+      } else {
+        referenceGeometry = currentGeometry;
+      }
+    }
   }
+
+  await themeSelect.selectOption("nord");
+  await page.reload();
+  await expect(page.getByLabel("Theme")).toHaveValue("nord");
 });
 
 test("pauses sampling, hides stale work, resumes, and clears retained history", async ({
@@ -650,7 +815,6 @@ test("pauses sampling, hides stale work, resumes, and clears retained history", 
   const session = await mockNetwork(page);
   await page.goto("/");
   await waitForAllProbes(session.requests);
-  await setSamplingInterval(page, session.requests, "3");
   const interval = 3;
   await advanceProbeCycles(page, session.requests, 2, interval);
 

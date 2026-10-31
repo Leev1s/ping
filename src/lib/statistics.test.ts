@@ -52,10 +52,12 @@ describe("box statistics", () => {
       max: 80,
     });
   });
-  it("shows the nearest-rank P95 only after 40 valid samples", () => {
+  it("shows the empirical P95 from the first valid sample", () => {
+    expect(statistics(samples([12])).p95).toBe(12);
+    expect(statistics([]).p95).toBeNull();
     expect(
       statistics(samples(Array.from({ length: 39 }, (_, i) => i + 1))).p95,
-    ).toBeNull();
+    ).toBe(38);
     expect(
       statistics(samples(Array.from({ length: 40 }, (_, i) => i + 1))).p95,
     ).toBe(38);

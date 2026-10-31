@@ -58,7 +58,7 @@ export function statistics(samples: readonly Sample[]) {
     low: inside[0] ?? null,
     high: inside.at(-1) ?? null,
     p95:
-      values.length < 40 ? null : values[Math.ceil(0.95 * values.length) - 1],
+      values.length === 0 ? null : values[Math.ceil(0.95 * values.length) - 1],
     jitter: pairs ? changes / pairs : null,
   };
 }

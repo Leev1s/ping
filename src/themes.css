@@ -1,0 +1,96 @@
+/*
+ * Ping's compact theme set. Keep interface and chart colors behind these tokens
+ * so a theme change never alters layout or causes content to reflow.
+ */
+:root,
+[data-theme="light"] {
+  color-scheme: light;
+  --canvas: #f3f5f8;
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --ink: #192638;
+  --muted: #53637a;
+  --line: #dce2eb;
+  --accent: #2555bb;
+  --accent-ink: #ffffff;
+  --accent-soft: #e7eefd;
+  --accent-line: #7894ce;
+  --success: #18704a;
+  --warning: #795a1b;
+  --danger: #b4232a;
+  --grid: #d7dfea;
+  --shadow: 0 10px 28px rgba(29, 47, 76, 0.08);
+  --chart-fill: #dce7ff;
+  --point: #3868c5;
+  --menu-backdrop: rgba(25, 38, 56, 0.28);
+  --neutral-soft: #edf2fc;
+}
+
+[data-theme="dark"] {
+  color-scheme: dark;
+  --canvas: #141820;
+  --surface: #1b202a;
+  --surface-raised: #242c39;
+  --ink: #e7ebf2;
+  --muted: #a8b2c2;
+  --line: #3a4557;
+  --accent: #91b4ff;
+  --accent-ink: #141820;
+  --accent-soft: #283752;
+  --accent-line: #6f89b4;
+  --success: #68d391;
+  --warning: #f4c36a;
+  --danger: #ff8a8a;
+  --grid: #343e50;
+  --shadow: 0 12px 32px rgba(0, 0, 0, 0.28);
+  --chart-fill: #2b405f;
+  --point: #a9c5ff;
+  --menu-backdrop: rgba(3, 8, 18, 0.66);
+  --neutral-soft: #262e3c;
+}
+
+[data-theme="gruvbox"] {
+  color-scheme: dark;
+  --canvas: #282828;
+  --surface: #32302f;
+  --surface-raised: #3c3836;
+  --ink: #ebdbb2;
+  --muted: #bdae93;
+  --line: #504945;
+  --accent: #fabd2f;
+  --accent-ink: #282828;
+  --accent-soft: #50401c;
+  --accent-line: #b18320;
+  --success: #b8bb26;
+  --warning: #fe8019;
+  --danger: #ff8174;
+  --grid: #504945;
+  --shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
+  --chart-fill: #50401c;
+  --point: #fabd2f;
+  --menu-backdrop: rgba(20, 18, 16, 0.7);
+  --neutral-soft: #3c3836;
+}
+
+[data-theme="nord"] {
+  color-scheme: dark;
+  --canvas: #2e3440;
+  --surface: #3b4252;
+  --surface-raised: #434c5e;
+  --ink: #eceff4;
+  --muted: #d8dee9;
+  --line: #4c566a;
+  --accent: #91cddf;
+  --accent-ink: #2e3440;
+  --accent-soft: #3b5363;
+  --accent-line: #759fb0;
+  --success: #b1d49b;
+  --warning: #ebcb8b;
+  --danger: #ffa5aa;
+  --grid: #4c566a;
+  --shadow: 0 12px 32px rgba(12, 16, 24, 0.32);
+  --chart-fill: #3b5363;
+  --point: #9dd5e5;
+  --menu-backdrop: rgba(17, 21, 29, 0.7);
+  --neutral-soft: #434c5e;
+}

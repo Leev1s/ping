@@ -1,15 +1,12 @@
 @import "./fonts.css";
+@import "./themes.css";
 :root {
   font-family: Inter, sans-serif;
-  color: #192638;
-  background: #f3f5f8;
+  color: var(--ink);
+  background: var(--canvas);
   font-synthesis: none;
-  color-scheme: light;
-  --muted: #53637a;
-  --line: #dce2eb;
-  --blue: #2555bb;
-  --green: #18704a;
 }
+
 * {
   box-sizing: border-box;
 }
@@ -40,7 +37,7 @@ a {
 button:focus-visible,
 a:focus-visible,
 select:focus-visible {
-  outline: 3px solid #5783e4;
+  outline: 3px solid var(--accent-line);
   outline-offset: 3px;
 }
 button {
@@ -70,12 +67,7 @@ button:disabled {
   align-items: center;
   flex-shrink: 0;
 }
-.brand img {
-  display: block;
-  width: 112px;
-  height: 32px;
-  object-fit: contain;
-}
+
 .topbar h1 {
   font:
     500 12px Inter,
@@ -103,25 +95,13 @@ button:disabled {
   background: transparent;
   border: 1px solid transparent;
   border-radius: 8px;
-  color: #34445c;
+  color: var(--ink);
 }
 .control:hover {
-  background: #e5eaf3;
-  border-color: #d8dfec;
+  background: var(--neutral-soft);
+  border-color: var(--line);
 }
-.status-badge {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  width: 102px;
-  font-size: 11px;
-  color: #795a1b;
-  white-space: nowrap;
-}
-.status-badge.is-live {
-  color: var(--green);
-}
+
 .status-dot {
   display: inline-block;
   width: 5px;
@@ -137,30 +117,22 @@ button:disabled {
   color: var(--muted);
   margin-left: 1px;
 }
-.history-control {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 11px;
-  color: var(--muted);
-}
+
 select {
   height: 44px;
   border: 1px solid var(--line);
   border-radius: 7px;
-  background: #fff;
+  background: var(--surface);
   padding: 0 8px;
   font:
     11px "JetBrains Mono",
     monospace;
   cursor: pointer;
 }
-.history-control select {
-  width: 67px;
-}
+
 main {
   display: grid;
-  grid-template-rows: 148px minmax(0, 1fr);
+  grid-template-rows: 156px minmax(0, 1fr);
   gap: 14px;
   min-height: 0;
   min-width: 0;
@@ -190,14 +162,14 @@ main {
 }
 .connection-cards {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 7fr 5fr;
   gap: 18px;
   min-height: 0;
 }
 .connection-card {
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 11px;
+  border-radius: 16px;
   padding: 10px 16px;
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -221,9 +193,9 @@ main {
   height: 22px;
   display: grid;
   place-items: center;
-  background: #edf2fc;
-  color: var(--blue);
-  border: 1px solid #d3dff5;
+  background: var(--neutral-soft);
+  color: var(--accent);
+  border: 1px solid var(--line);
   border-radius: 6px;
   font:
     500 8px "JetBrains Mono",
@@ -231,9 +203,9 @@ main {
   flex-shrink: 0;
 }
 .provider-mark.ipinfo {
-  color: #247260;
-  background: #edf6f2;
-  border-color: #cfe4db;
+  color: var(--success);
+  background: var(--neutral-soft);
+  border-color: var(--line);
 }
 .exit-heading h3 {
   font-size: 11px;
@@ -358,19 +330,19 @@ main {
   margin: 0;
 }
 .region-heading svg {
-  color: #49617f;
+  color: var(--muted);
 }
 .region-mark {
   display: grid;
   place-items: center;
-  border: 1px solid #97a7be;
+  border: 1px solid var(--line);
   border-radius: 3px;
   width: 18px;
   height: 14px;
   font:
     8px "JetBrains Mono",
     monospace;
-  color: #49617f;
+  color: var(--muted);
 }
 .plot-legend {
   display: flex;
@@ -386,7 +358,7 @@ main {
 .legend-new {
   width: 4px;
   height: 4px;
-  background: var(--blue);
+  background: var(--accent);
   border-radius: 50%;
   display: inline-block;
 }
@@ -407,8 +379,8 @@ main {
   min-width: 0;
   min-height: 0;
   border: 1px solid var(--line);
-  border-radius: 10px;
-  background: #fff;
+  border-radius: 12px;
+  background: var(--surface);
   padding: 10px 14px;
 }
 .probe-heading {
@@ -423,18 +395,18 @@ main {
   display: grid;
   place-items: center;
   flex-shrink: 0;
-  border: 1px solid #d4dff1;
+  border: 1px solid var(--line);
   border-radius: 7px;
-  background: #edf2fc;
-  color: #2e56a0;
+  background: var(--neutral-soft);
+  color: var(--accent);
   font:
     500 9px "JetBrains Mono",
     monospace;
 }
 .service-avatar.cn {
-  border-color: #d7e6dd;
-  background: #eff6f2;
-  color: #2b6b53;
+  border-color: var(--line);
+  background: var(--neutral-soft);
+  color: var(--success);
 }
 .probe-title {
   min-width: 0;
@@ -465,16 +437,16 @@ main {
   display: flex;
   gap: 3px;
   align-items: center;
-  color: #795a1b;
+  color: var(--warning);
   font-size: 8px;
   font-weight: 400;
 }
 .probe-status.ok {
-  color: var(--green);
+  color: var(--success);
 }
 .probe-status.error,
 .probe-status.timeout {
-  color: #af252c;
+  color: var(--danger);
 }
 .probe-status.waiting {
   color: var(--muted);
@@ -514,35 +486,35 @@ main {
   width: 100%;
   height: 100%;
   overflow: visible;
-  color: var(--blue);
+  color: var(--accent);
 }
 .plot-gridline {
-  stroke: #e4e9f1;
+  stroke: var(--grid);
   stroke-width: 1;
   stroke-dasharray: 2 3;
 }
 .whisker {
-  stroke: #5576b9;
+  stroke: var(--accent-line);
   stroke-width: 1.25;
 }
 .iqr-box {
-  fill: #dce7ff;
-  stroke: var(--blue);
+  fill: var(--chart-fill);
+  stroke: var(--accent);
   stroke-width: 1.25;
 }
 .median-line {
-  stroke: var(--blue);
+  stroke: var(--accent);
   stroke-width: 2;
 }
 .sample-point {
-  fill: #3868c5;
+  fill: var(--point);
 }
 .sample-point.is-overflow {
-  fill: #a96a1e;
+  fill: var(--warning);
 }
 .overflow-marker {
   fill: none;
-  stroke: #9d631a;
+  stroke: var(--warning);
   stroke-width: 1.5;
 }
 .plot-axis {
@@ -578,7 +550,7 @@ main {
 }
 .probe-stats b {
   font-weight: 500;
-  color: #293d5a;
+  color: var(--ink);
   font-size: 10px;
   display: inline-block;
   min-width: 4ch;
@@ -595,7 +567,7 @@ main {
   white-space: nowrap;
 }
 .probe-count.has-failures .failure-count {
-  color: #af252c;
+  color: var(--danger);
 }
 .session-strip {
   display: flex;
@@ -616,13 +588,13 @@ main {
   min-width: 80px;
 }
 .session-clock > .status-dot {
-  color: var(--green);
+  color: var(--success);
 }
 .session-strip b {
   font:
     500 9px "JetBrains Mono",
     monospace;
-  color: #344864;
+  color: var(--ink);
 }
 .retention-label {
   margin-left: auto;
@@ -641,15 +613,15 @@ main {
   width: min(324px, calc(100vw - 32px));
   border: 1px solid var(--line);
   border-radius: 14px;
-  background: #fff;
-  box-shadow: 0 20px 90px #172b4d33;
-  color: #192638;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  color: var(--ink);
   font-size: 13px;
   max-height: calc(100dvh - 28px);
   overflow: auto;
 }
 .more-menu::backdrop {
-  background: #1c30452e;
+  background: var(--menu-backdrop);
 }
 .menu-heading {
   display: flex;
@@ -673,7 +645,7 @@ main {
 }
 .more-menu > button:hover,
 .more-menu > a:hover {
-  background: #edf2fa;
+  background: var(--neutral-soft);
 }
 .menu-setting {
   justify-content: space-between;
@@ -684,12 +656,7 @@ main {
   font-size: 10px;
   max-width: 110px;
 }
-.menu-value {
-  margin-left: auto;
-  font:
-    9px "JetBrains Mono",
-    monospace;
-}
+
 .notice {
   position: fixed;
   bottom: max(20px, env(safe-area-inset-bottom));
@@ -704,8 +671,8 @@ main {
   min-width: 140px;
   padding: 0 14px;
   border-radius: 8px;
-  background: #243b5c;
-  color: #fff;
+  background: var(--accent);
+  color: var(--accent-ink);
   font-size: 12px;
   visibility: hidden;
   pointer-events: none;
@@ -842,10 +809,7 @@ main {
   .topbar {
     gap: 8px;
   }
-  .brand img {
-    width: 86px;
-    height: 28px;
-  }
+
   .topbar h1 {
     position: absolute;
     width: 1px;
@@ -860,25 +824,15 @@ main {
   .toolbar {
     gap: 1px;
   }
-  .status-badge {
-    width: 61px;
-    font-size: 10px;
-    gap: 4px;
-  }
+
   .cadence {
     font-size: 8px;
   }
-  .history-control {
-    gap: 0;
-  }
+
   .history-control > span {
     display: none;
   }
-  .history-control select {
-    width: 56px;
-    font-size: 10px;
-    padding: 0 4px;
-  }
+
   .control {
     min-width: 44px;
     height: 44px;
@@ -1109,22 +1063,11 @@ main {
     padding: 0 9px;
     grid-template-rows: 48px minmax(0, 1fr) 25px;
   }
-  .brand img {
-    width: 77px;
-    height: 26px;
-  }
-  .status-badge {
-    width: 50px;
-    font-size: 9px;
-    gap: 3px;
-  }
+
   .cadence {
     font-size: 7px;
   }
-  .history-control select {
-    width: 52px;
-    font-size: 9px;
-  }
+
   .topbar {
     gap: 3px;
   }
@@ -1265,10 +1208,7 @@ main {
     min-height: 360px;
     grid-template-rows: 44px minmax(0, 1fr) 24px;
   }
-  .brand img {
-    width: 82px;
-    height: 27px;
-  }
+
   .topbar h1 {
     position: absolute;
     width: 1px;
@@ -1280,13 +1220,7 @@ main {
   .toolbar {
     gap: 4px;
   }
-  .status-badge {
-    width: 76px;
-    font-size: 10px;
-  }
-  .history-control > span {
-    display: none;
-  }
+
   .history-control select {
     width: 60px;
   }
@@ -1468,4 +1402,234 @@ main {
 .plot-axis > span {
   position: absolute;
   top: 0;
+}
+
+/* A fixed toolbar: live/cadence, theme, options. */
+.brand {
+  gap: 7px;
+  min-height: 44px;
+}
+.brand-symbol {
+  width: 29px;
+  height: 29px;
+  flex-shrink: 0;
+  background: var(--accent);
+  mask: url("/brand/mark.svg") center / contain no-repeat;
+}
+.brand-word {
+  font:
+    700 31px/1 "Space Grotesk",
+    sans-serif;
+  letter-spacing: -1.4px;
+  color: var(--ink);
+}
+.brand-word > span {
+  color: var(--accent);
+}
+.live-control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 112px;
+  height: 44px;
+  padding: 0 5px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--warning);
+}
+.live-control:hover {
+  background: var(--neutral-soft);
+}
+.live-control.is-live {
+  color: var(--success);
+}
+.live-control .status-badge {
+  font-size: 11px;
+  white-space: nowrap;
+}
+.live-control .cadence {
+  font:
+    9px "JetBrains Mono",
+    monospace;
+  color: var(--muted);
+  margin: 0;
+}
+.activity-chart {
+  flex-shrink: 0;
+}
+.is-live .activity-chart {
+  animation: status-breathe 2s ease-in-out infinite;
+}
+.theme-select {
+  width: 110px;
+  background: var(--surface);
+  color: var(--ink);
+}
+input {
+  font: inherit;
+  color: var(--ink);
+  background: var(--surface);
+}
+input:focus-visible {
+  outline: 3px solid var(--accent-line);
+  outline-offset: 3px;
+}
+.interval-form {
+  padding: 4px 0 12px;
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--line);
+}
+.interval-form .menu-setting {
+  padding: 0 12px;
+  font-size: 12px;
+  gap: 5px;
+}
+.input-unit {
+  color: var(--muted);
+  font-size: 10px;
+  margin-right: auto;
+}
+.interval-form input {
+  width: 95px;
+  height: 44px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 0 9px;
+  font:
+    12px "JetBrains Mono",
+    monospace;
+}
+.apply-interval {
+  margin: 8px 12px 0;
+  width: calc(100% - 24px);
+  height: 44px;
+  border-radius: 7px;
+  color: var(--accent-ink);
+  background: var(--accent);
+  font-size: 12px;
+}
+.p95-value {
+  min-width: 5ch;
+}
+.connection-card[data-provider="ipinfo"] {
+  border-color: var(--accent-line);
+  box-shadow: var(--shadow);
+}
+.connection-card[data-provider="ipinfo"] .exit-address {
+  font-size: 16px;
+  letter-spacing: -0.5px;
+}
+.magic-card-glow {
+  opacity: 0;
+  transition: opacity 200ms ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .magic-card:hover .magic-card-glow {
+    opacity: 1;
+  }
+}
+@keyframes status-breathe {
+  50% {
+    opacity: 0.45;
+  }
+}
+@media (max-width: 1000px) {
+  .connection-card[data-provider="ipinfo"] .exit-address {
+    font-size: 12px;
+  }
+}
+@media (max-width: 700px) {
+  .brand {
+    gap: 5px;
+  }
+  .brand-symbol {
+    width: 23px;
+    height: 23px;
+  }
+  .brand-word {
+    font-size: 27px;
+    letter-spacing: -1.2px;
+  }
+  .live-control {
+    width: 91px;
+    gap: 4px;
+  }
+  .live-control .status-badge {
+    font-size: 10px;
+  }
+  .live-control .cadence {
+    font-size: 8px;
+  }
+  .activity-chart {
+    width: 16px;
+    height: 16px;
+  }
+  .theme-select {
+    width: 90px;
+    padding: 0 4px;
+    font-size: 10px;
+  }
+  .connection-cards {
+    grid-template-columns: 1fr 1fr;
+  }
+  .connection-card[data-provider="ipinfo"] .exit-address {
+    font-size: 10px;
+    letter-spacing: 0;
+  }
+}
+@media (max-width: 350px) {
+  .brand-symbol {
+    width: 20px;
+    height: 20px;
+  }
+  .brand-word {
+    font-size: 25px;
+  }
+  .live-control {
+    width: 81px;
+    gap: 3px;
+  }
+  .live-control .status-badge {
+    font-size: 9px;
+  }
+  .live-control .cadence {
+    font-size: 7px;
+  }
+  .activity-chart {
+    width: 14px;
+    height: 14px;
+  }
+  .theme-select {
+    width: 80px;
+    font-size: 9px;
+  }
+  .connection-card[data-provider="ipinfo"] .exit-address {
+    font-size: 9px;
+  }
+}
+@media (max-height: 500px) and (min-width: 560px) {
+  .brand-symbol {
+    width: 23px;
+    height: 23px;
+  }
+  .brand-word {
+    font-size: 27px;
+  }
+  .live-control {
+    width: 98px;
+  }
+  .theme-select {
+    width: 95px;
+    font-size: 10px;
+  }
+  .connection-card[data-provider="ipinfo"] .exit-address {
+    font-size: 9px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .magic-card-glow {
+    display: none;
+  }
 }

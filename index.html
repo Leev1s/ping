@@ -29,6 +29,13 @@
       type="font/woff2"
       crossorigin
     />
+    <script>
+      try {
+        const t = localStorage.getItem("ping-theme");
+        if (["light", "dark", "gruvbox", "nord"].includes(t))
+          document.documentElement.dataset.theme = t;
+      } catch {}
+    </script>
     <title>Ping · Network status</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   </head>

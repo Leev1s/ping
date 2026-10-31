@@ -51,11 +51,11 @@ export const TARGETS: ProbeTarget[] = [
     method: "cors",
   },
   {
-    id: "google",
-    name: "Google",
-    url: "https://www.gstatic.com/generate_204",
+    id: "jsdelivr",
+    name: "jsDelivr",
+    url: "https://cdn.jsdelivr.net/npm/latency-test@1.0.0/generate_200",
     region: "global",
-    method: "opaque",
+    method: "cors",
   },
   {
     id: "github",

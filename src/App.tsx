@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  Activity,
   ArrowDownToLine,
   Check,
   CircleCheck,
@@ -9,12 +10,11 @@ import {
   EyeOff,
   Globe2,
   Github,
-  Pause,
-  Play,
   RefreshCw,
   RotateCcw,
   X,
 } from "lucide-react";
+import { MagicCard } from "./components/magicui/magic-card";
 import { NumberTicker } from "./components/magicui/number-ticker";
 import { TARGETS, probe, type Sample, type ProbeTarget } from "./lib/network";
 import { fetchConnectionInfo, type ConnectionReport } from "./lib/connection";
@@ -26,6 +26,15 @@ import {
 } from "./lib/history";
 import { hasLatency, statistics } from "./lib/statistics";
 
+const WINDOW_MINUTES = 30;
+const PLOT_SCALE = 1000;
+const THEMES = {
+  light: "Light",
+  dark: "Dark",
+  gruvbox: "Gruvbox",
+  nord: "Nord",
+} as const;
+type Theme = keyof typeof THEMES;
 type ProbeHistory = { samples: Sample[]; total: number; failures: number };
 const timeFormat = new Intl.DateTimeFormat("en-GB", {
   hour: "2-digit",
@@ -40,7 +49,7 @@ const AVATARS: Record<string, string> = {
   wechat: "WX",
   taobao: "TB",
   cloudflare: "CF",
-  google: "G",
+  jsdelivr: "JS",
   github: "GH",
   microsoft: "MS",
 };
@@ -50,37 +59,36 @@ const number = (value: number | null) =>
 function ProbePlot({
   samples,
   now,
-  windowMs,
-  scale,
   stats,
 }: {
   samples: Sample[];
   now: number;
-  windowMs: number;
-  scale: number;
   stats: ReturnType<typeof statistics>;
 }) {
-  const marks = plotHistory(samples.filter(hasLatency), now, windowMs);
+  const marks = plotHistory(
+    samples.filter(hasLatency),
+    now,
+    WINDOW_MINUTES * 60000,
+  );
   const position = (value: number) =>
-    3 +
-    (Math.log1p(Math.min(scale, Math.max(0, value))) / Math.log1p(scale)) * 94;
+    3 + (Math.min(PLOT_SCALE, Math.max(0, value)) / PLOT_SCALE) * 94;
   const x = (value: number) => `${position(value)}%`;
   const overflow = samples.filter(
-    (sample) => hasLatency(sample) && sample.latency > scale,
+    (sample) => hasLatency(sample) && sample.latency > PLOT_SCALE,
   ).length;
   return (
     <div className="plot-frame">
       <svg
         className="boxplot"
-        data-scale={scale}
+        data-scale={PLOT_SCALE}
         role="img"
-        aria-label={`HTTP latency, ${stats.count} valid samples. Median ${number(stats.median)} ms, Q1 ${number(stats.q1)}, Q3 ${number(stats.q3)}. ${overflow} readings above ${scale} ms.`}
+        aria-label={`HTTP latency, ${stats.count} valid samples. Median ${number(stats.median)} ms, Q1 ${number(stats.q1)}, Q3 ${number(stats.q3)}. ${overflow} readings above ${PLOT_SCALE} ms.`}
       >
         <title>
           Box: Q1–Q3. Line: median. Whiskers: 1.5×IQR. Dots: measurements, older
-          points fade. Fixed log(1 + ms) axis.
+          points fade. Fixed linear 0–1000 ms axis.
         </title>
-        {[0, 10, 100, scale].map((tick) => (
+        {[0, 250, 500, 750, 1000].map((tick) => (
           <line
             className="plot-gridline"
             key={tick}
@@ -132,7 +140,7 @@ function ProbePlot({
           )}
         {marks.map(({ sample, opacity }, i) => (
           <circle
-            className={`sample-point ${sample.latency! > scale ? "is-overflow" : ""}`}
+            className={`sample-point ${sample.latency! > PLOT_SCALE ? "is-overflow" : ""}`}
             key={`${sample.at}-${i}`}
             cx={x(sample.latency!)}
             cy={`${69 + ((Math.floor(sample.at) % 13) - 6) * 1.6}%`}
@@ -155,9 +163,9 @@ function ProbePlot({
       </svg>
       <div
         className="plot-axis"
-        aria-label="Fixed logarithmic millisecond scale"
+        aria-label="Fixed linear 0–1000 millisecond scale"
       >
-        {[0, 10, 100, scale].map((tick, i) => (
+        {[0, 250, 500, 750, 1000].map((tick, i) => (
           <span
             key={tick}
             style={{
@@ -165,13 +173,13 @@ function ProbePlot({
               transform:
                 i === 0
                   ? "none"
-                  : i === 3
+                  : i === 4
                     ? "translateX(-100%)"
                     : "translateX(-50%)",
             }}
           >
             {tick >= 1000 ? `${tick / 1000}k` : tick}
-            {i === 3 ? " ms" : ""}
+            {i === 4 ? " ms" : ""}
           </span>
         ))}
       </div>
@@ -185,14 +193,17 @@ export default function App() {
   const [online, setOnline] = useState(navigator.onLine);
   const [interval, setIntervalSeconds] = useState(() => {
     try {
-      const n = Number(localStorage.getItem("ping-interval") ?? 5);
-      return [3, 5, 10].includes(n) ? n : 5;
+      const n = Number(localStorage.getItem("ping-interval-seconds") ?? 3);
+      return Number.isFinite(n) && n >= 1 && n <= 300 ? n : 3;
     } catch {
-      return 5;
+      return 3;
     }
   });
-  const [windowMinutes, setWindowMinutes] = useState(5);
-  const [scale, setScale] = useState(1000);
+  const [intervalDraft, setIntervalDraft] = useState(String(interval));
+  const [theme, setTheme] = useState<Theme>(() => {
+    const saved = document.documentElement.dataset.theme;
+    return saved && saved in THEMES ? (saved as Theme) : "light";
+  });
   const [history, setHistory] = useState<Record<string, ProbeHistory>>({});
   const [now, setNow] = useState(Date.now);
   const [startedAt, setStartedAt] = useState(Date.now);
@@ -208,6 +219,22 @@ export default function App() {
   const [epoch, setEpoch] = useState(0);
   const menu = useRef<HTMLDialogElement>(null);
   const running = !paused && visible && online;
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try {
+      localStorage.setItem("ping-theme", theme);
+    } catch {
+      /* preferences are optional */
+    }
+    document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute(
+        "content",
+        getComputedStyle(document.documentElement)
+          .getPropertyValue("--canvas")
+          .trim(),
+      );
+  }, [theme]);
   useEffect(() => {
     const visibility = () => setVisible(!document.hidden);
     const net = () => setOnline(navigator.onLine);
@@ -320,11 +347,11 @@ export default function App() {
   const exportData = () => {
     const payload = {
       app: "Ping",
-      version: 3,
+      version: 4,
       exportedAt: new Date().toISOString(),
       startedAt: new Date(startedAt).toISOString(),
       intervalSeconds: interval,
-      windowMinutes,
+      windowMinutes: WINDOW_MINUTES,
       retentionLimit: HISTORY_LIMIT,
       measurement:
         "Browser HTTP time to response headers; not ICMP. Opaque timings do not verify HTTP status.",
@@ -350,43 +377,44 @@ export default function App() {
     <div className="app-shell">
       <header className="topbar">
         <a className="brand" href="/" aria-label="Ping">
-          <img src="/brand/wordmark.svg" width="112" height="32" alt="Ping" />
+          <span className="brand-symbol" aria-hidden="true" />
+          <span className="brand-word">
+            ping<span>.</span>
+          </span>
         </a>
         <h1>Network status</h1>
         <div className="toolbar">
-          <span className={`status-badge ${running ? "is-live" : ""}`}>
-            <span className="status-dot" />
-            {stateText}
-            <span className="cadence">{interval}s</span>
-          </span>
-          <label className="history-control">
-            <span>History</span>
-            <select
-              aria-label="History window"
-              value={windowMinutes}
-              onChange={(e) => setWindowMinutes(Number(e.target.value))}
-            >
-              {[5, 30, 60].map((n) => (
-                <option key={n} value={n}>
-                  {n}m
-                </option>
-              ))}
-            </select>
-          </label>
           <button
-            className="control"
+            className={`live-control ${running ? "is-live" : ""}`}
             aria-label={paused ? "Resume" : "Pause"}
-            title={paused ? "Resume" : "Pause"}
+            title={`${stateText} · ${interval}s · ${paused ? "Resume" : "Pause"} sampling`}
             onClick={() => setPaused(!paused)}
           >
-            {paused ? <Play size={17} /> : <Pause size={17} />}
+            <Activity className="activity-chart" size={20} aria-hidden="true" />
+            <span className="status-badge">{stateText}</span>
+            <span className="cadence">{interval}s</span>
           </button>
+          <select
+            className="theme-select"
+            aria-label="Theme"
+            value={theme}
+            onChange={(e) => setTheme(e.target.value as Theme)}
+          >
+            {Object.entries(THEMES).map(([id, name]) => (
+              <option key={id} value={id}>
+                {name}
+              </option>
+            ))}
+          </select>
           <button
             className="control"
             aria-label="More options"
             aria-haspopup="dialog"
             aria-expanded={menuOpen}
-            onClick={() => setMenuOpen(true)}
+            onClick={() => {
+              setIntervalDraft(String(interval));
+              setMenuOpen(true);
+            }}
           >
             <Ellipsis size={20} />
           </button>
@@ -420,14 +448,15 @@ export default function App() {
             </div>
           </div>
           <div className="connection-cards">
-            {(["cloudflare", "ipinfo"] as const).map((provider) => {
+            {(["ipinfo", "cloudflare"] as const).map((provider) => {
               const data = connection[provider];
               const location = [data?.city, data?.region, data?.countryCode]
                 .filter(Boolean)
                 .filter((v, i, a) => a.indexOf(v) === i)
                 .join(", ");
+              const Card = provider === "ipinfo" ? MagicCard : "article";
               return (
-                <article
+                <Card
                   className="connection-card"
                   data-provider={provider}
                   key={provider}
@@ -496,7 +525,7 @@ export default function App() {
                       </div>
                     </dl>
                   )}
-                </article>
+                </Card>
               );
             })}
           </div>
@@ -521,7 +550,7 @@ export default function App() {
                 <span className="plot-legend">
                   <span className="legend-old" />
                   <span className="legend-new" />
-                  log · {windowMinutes}m
+                  last {WINDOW_MINUTES}m
                 </span>
               </div>
               <div className="probe-grid">
@@ -531,7 +560,7 @@ export default function App() {
                     const recent = selectRecentHistory(
                       h.samples,
                       now,
-                      windowMinutes * 60000,
+                      WINDOW_MINUTES * 60000,
                     );
                     const stats = statistics(recent);
                     const last = h.samples.at(-1);
@@ -596,13 +625,7 @@ export default function App() {
                             <span>ms</span>
                           </div>
                         </div>
-                        <ProbePlot
-                          samples={recent}
-                          now={now}
-                          windowMs={windowMinutes * 60000}
-                          scale={scale}
-                          stats={stats}
-                        />
+                        <ProbePlot samples={recent} now={now} stats={stats} />
                         <div className="probe-footer">
                           <div className="probe-stats">
                             <span>
@@ -610,7 +633,17 @@ export default function App() {
                             </span>
                             <span>
                               P95{" "}
-                              <b title="Available after 40 valid readings">
+                              <b
+                                className="p95-value"
+                                title={
+                                  stats.count < 40
+                                    ? `Early estimate from ${stats.count} valid readings`
+                                    : `P95 from ${stats.count} valid readings`
+                                }
+                              >
+                                {stats.p95 !== null && stats.count < 40
+                                  ? "~"
+                                  : ""}
                                 {number(stats.p95)}
                               </b>
                             </span>
@@ -684,38 +717,39 @@ export default function App() {
             <X size={18} />
           </button>
         </div>
-        <label className="menu-setting">
-          Sampling interval
-          <select
-            aria-label="Sampling interval"
-            value={interval}
-            onChange={(e) => {
-              const n = Number(e.target.value);
-              setIntervalSeconds(n);
-              try {
-                localStorage.setItem("ping-interval", String(n));
-              } catch {
-                /* preferences are optional */
-              }
-            }}
-          >
-            {[3, 5, 10].map((n) => (
-              <option key={n} value={n}>
-                {n} seconds
-              </option>
-            ))}
-          </select>
-        </label>
-        <button
-          aria-label="Plot scale"
-          onClick={() => setScale((s) => (s === 1000 ? 5000 : 1000))}
+        <form
+          className="interval-form"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const n = Number(intervalDraft);
+            if (!Number.isFinite(n) || n < 1 || n > 300) return;
+            setIntervalSeconds(n);
+            try {
+              localStorage.setItem("ping-interval-seconds", String(n));
+            } catch {
+              /* preferences are optional */
+            }
+            setNotice(`Sampling every ${n}s`);
+            setMenuOpen(false);
+          }}
         >
-          <Globe2 size={17} />
-          Plot scale
-          <span className="menu-value">
-            0–{scale.toLocaleString("en-US")} ms
-          </span>
-        </button>
+          <label className="menu-setting">
+            Interval <span className="input-unit">seconds</span>
+            <input
+              aria-label="Sampling interval"
+              type="number"
+              min="1"
+              max="300"
+              step="any"
+              required
+              value={intervalDraft}
+              onChange={(e) => setIntervalDraft(e.target.value)}
+            />
+          </label>
+          <button type="submit" className="apply-interval">
+            Apply interval
+          </button>
+        </form>
         <button onClick={exportData}>
           <ArrowDownToLine size={17} />
           Export data
@@ -731,15 +765,6 @@ export default function App() {
         >
           <RotateCcw size={17} />
           Clear history
-        </button>
-        <button
-          onClick={() => {
-            setInfoVersion((v) => v + 1);
-            setMenuOpen(false);
-          }}
-        >
-          <RefreshCw size={17} />
-          Refresh connection info
         </button>
         <a
           href="https://github.com/Leev1s/ping"
