@@ -31,8 +31,8 @@
 | 类型与单元测试 | `npm run check` 通过；`npm test` 15 项通过，包括真实超时边界的模拟、外部取消、HTTP 错误、opaque 状态、统计和连接信息解析。 |
 | 浏览器端到端 | `npm run test:e2e` 6 项通过（Chromium，14.2 秒）。覆盖持续轮询、暂停/恢复/清空、同目标单请求、63 轮后的 60 条上限、隐藏/离线中止与恢复、中英记忆、导出排除已揭示 IP、1440px/375px 双语无横向溢出。服务响应在这些确定性测试中被模拟。 |
 | 真实网络 | 桌面 Chrome 对生产域名直接探测，Cloudflare 返回可达，其他四项显示耗时与未验证状态码；IP 默认遮蔽；控制台无错误。资源主机仅本站、五个探测服务及 Cloudflare trace。 |
-| 构建与部署 | `npm run build`、`npx wrangler deploy --dry-run` 和实际 `npx wrangler deploy` 均成功。自定义域名 [ping.r3.net.eu.org](https://ping.r3.net.eu.org/) HTTPS 首页返回 200，响应包含配置的安全头。 |
-| 远端 CI | 推送后检查 GitHub Actions；结果记录在工作流运行中。 |
+| 构建与部署 | `npm run build`、`npx wrangler deploy --dry-run` 和实际 `npx wrangler deploy` 均成功。自定义域名 [ping.r3.net.eu.org](https://ping.r3.net.eu.org/) HTTPS 首页和深层路径回退均返回 200，响应包含配置的安全头。 |
+| 远端 CI | 首轮 GitHub Actions 全部通过：[CI 41184905522](https://github.com/Leev1s/ping/actions/runs/41184905522)。后续提交状态以 Actions 当前运行为准。 |
 
 对应实现与可重复测试见仓库当前提交。单元与端到端测试是控制环境检查；真实服务可用性随访问者网络与供应商策略变化。浏览器能正常采样不能证明 ICMP 或所有站点可达。
 
