@@ -1,38 +1,47 @@
-# Ping · Network Status
+# Ping · Network status
 
-A bilingual single-page app for observing your current network. It continuously measures the time from a browser HTTP request until response headers are available to JavaScript, then shows recent trends and connection details.
+Ping is a bilingual, single-screen network status page. It continuously measures browser HTTP requests to four public services in mainland China and four international services. Fixed-range statistics and tabular figures keep the layout steady; fonts are self-hosted.
 
-> This is the time from a browser request until response headers are available (a TTFB-like measure), not the time to download the full response body and not an ICMP ping. It does not represent overall network quality or server health. Cross-origin behavior, browser scheduling, and your local network can affect readings.
+> “Latency” is the time until a browser request's response headers become available, similar to TTFB. It is not ICMP ping and does not describe overall network quality or server health. Browser scheduling, routing, and the local network affect readings.
 
-[GitHub](https://github.com/Leev1s/ping) · [简体中文](README.md) · [Acceptance criteria](docs/ACCEPTANCE.md)
+[简体中文](README.md) · [Acceptance criteria](docs/ACCEPTANCE.md) · [Product decisions (Chinese)](docs/DESIGN.md)
 
-[Product and design decisions (Chinese)](docs/DESIGN.md) · [Reference research](docs/RESEARCH.md)
+Related research, in Chinese: [device ergonomics](docs/ERGONOMICS.md) · [stable-layout principles](docs/STABLE-UI.md) · [statistics and Cloudflare Speed Test](docs/STATISTICS.md).
 
-## Features
+## Page features
 
-- Continuously probe five public services; review a 60-sample trend for each and current, median, P95, jitter, and failure-rate metrics for Cloudflare.
-- Pause probing and choose a 3, 5, or 10-second interval. Probing pauses while the page is hidden, and the active request is aborted when the browser goes offline.
-- Chinese and English interface; language and sampling interval are stored in this browser.
-- IP addresses are hidden by default. A manually exported JSON contains probe results only and excludes IP addresses.
-- TypeScript + React + Vite with Magic UI's Number Ticker component; no custom backend or database.
+- Eight probes appear in two groups: mainland China and international, four per group. Fixed-size cards show each service's latest latency, P50 over up to 60 attempts, and response status. Select a card to inspect that target's statistics.
+- The selected target shows P50, P95 once at least 40 valid latency observations are available, mean adjacent-response variation, and failed attempts/total attempts. A fixed six-bin histogram uses `<50`, `50–100`, `100–250`, `250–500`, `500–1000`, and `1000+ ms` ranges and a fixed `0–100%` vertical scale. New samples update existing numbers and bins; they do not expand the chart or layout.
+- Choose a 3, 5, or 10-second interval; pause and resume probing. Sampling pauses when the tab is hidden, and active requests are aborted when the browser goes offline.
+- Switch between Chinese and English without reloading. Egress IP is hidden by default and can be revealed manually. Exported JSON excludes the egress IP; probe samples stay in page memory.
+- The page removes slogans and explanatory paragraphs. Common screen sizes show the main interface without scrolling, with space reserved for device-specific layouts and changing figures.
+
+Statistics are calculated per target; different services are never combined. Successful responses and timed opaque responses feed the latency distribution. HTTP errors, timeouts, and failed fetches are counted separately as “failures/attempts,” not packet loss. Even when an HTTP error has a response time, it is excluded from valid latency statistics. Opaque cross-origin timing remains marked unverified. See [statistics research](docs/STATISTICS.md) for the definitions and limits.
 
 ## Probe targets
 
-Each round requests these free public endpoints in parallel. The browser can read Cloudflare's HTTP status. The other cross-origin targets use opaque requests: their request duration can be shown, but it cannot confirm that the service returned a successful response.
+Every round requests these free public endpoints in parallel:
 
-| Service | URL |
-| --- | --- |
-| Cloudflare | `https://speed.cloudflare.com/__down?bytes=0` |
-| Google | `https://www.gstatic.com/generate_204` |
-| GitHub | `https://github.com/favicon.ico` |
-| Baidu | `https://www.baidu.com/favicon.ico` |
-| Bilibili | `https://www.bilibili.com/favicon.ico` |
+| Region | Service | URL |
+| --- | --- | --- |
+| Mainland China | Baidu | `https://www.baidu.com/favicon.ico` |
+| Mainland China | Bilibili | `https://www.bilibili.com/favicon.ico` |
+| Mainland China | WeChat | `https://res.wx.qq.com/a/wx_fed/assets/res/NTI4MWU5.ico` |
+| Mainland China | Taobao | `https://www.taobao.com/favicon.ico` |
+| International | Cloudflare | `https://speed.cloudflare.com/__down?bytes=0` |
+| International | Google | `https://www.gstatic.com/generate_204` |
+| International | GitHub | `https://github.com/favicon.ico` |
+| International | Microsoft | `https://www.bing.com/favicon.ico` |
 
-On page load, a separate request to `https://one.one.one.one/cdn-cgi/trace` retrieves connection details. The “Refresh connection info” control makes another request. Provider policies and endpoint availability can change or vary by network.
+Only the Cloudflare probe uses CORS to read HTTP status. The other seven use opaque cross-origin probes: their request time is visible, but HTTP success cannot be confirmed. On page load, a Cloudflare `one.one.one.one/cdn-cgi/trace` request retrieves the visitor's country, IP, and edge. Visitors can refresh this information manually. Endpoint policies, cross-origin behavior, and availability vary by provider, region, and time.
 
-## Run locally
+## Fonts
 
-Node.js 22 or a newer LTS release is required.
+Exactly three local, self-hosted font families are used: **Inter** (Latin interface text), **Noto Sans SC** (Simplified Chinese), and **JetBrains Mono** (latency figures). Each uses the SIL Open Font License 1.1. License files and update instructions are in [public/fonts/README.md](public/fonts/README.md). Page visits do not fetch fonts from Google Fonts.
+
+## Local development
+
+Node.js 22.12 or newer is required.
 
 ```bash
 git clone https://github.com/Leev1s/ping.git
@@ -41,22 +50,21 @@ npm ci
 npm run dev
 ```
 
-## Check
+## Checks
 
 ```bash
 npm run check
 npm test
 npm run build
-# Browser acceptance (install Chromium once)
-npx playwright install --with-deps chromium
+npx playwright install --with-deps chromium  # install before the first browser test run
 npm run test:e2e
 ```
 
-GitHub Actions runs these checks for every push and pull request.
+GitHub Actions runs type checking, unit tests, a production build, and browser tests on each push and pull request.
 
 ## Deploy to Cloudflare Workers
 
-You need Node.js/npm and a Cloudflare account. Authenticate in an interactive terminal before the first deployment:
+Authenticate from an interactive terminal before the first deployment:
 
 ```bash
 npm ci
@@ -65,18 +73,14 @@ npm run build
 npx wrangler deploy
 ```
 
-`wrangler.jsonc` serves static assets from `dist/`, enables single-page-app routing fallback, and configures `ping.r3.net.eu.org` as a custom domain in the Cloudflare account that hosts `r3.net.eu.org`. Wrangler sets up the route, DNS, and certificate; no separate manual configuration is needed. After deployment, visit [ping.r3.net.eu.org](https://ping.r3.net.eu.org).
+[`wrangler.jsonc`](wrangler.jsonc) serves static assets from `dist/`, enables single-page-app fallback, and binds the custom domain `ping.r3.net.eu.org` in the Cloudflare account that hosts `r3.net.eu.org`. Wrangler configures the domain, DNS, and certificate. Production: [ping.r3.net.eu.org](https://ping.r3.net.eu.org).
 
-When deploying a fork to your own domain, first change the Worker `name` in `wrangler.jsonc` and point `routes` to a domain hosted in your Cloudflare account. To use the Wrangler-provided `workers.dev` address, remove `routes` before deploying.
+For a fork, change the Worker name and `routes` to your Cloudflare-hosted domain. To use the Wrangler-provided `workers.dev` address, remove `routes`. GitHub Actions runs CI only by default. To deploy automatically, provide a Cloudflare API Token and Account ID as GitHub Secrets and configure a deployment workflow.
 
-For optional GitHub Actions auto-deploys, add `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` under **Settings → Secrets and variables → Actions**, then configure a deployment workflow. Keep the API token in GitHub Secrets. The default workflow runs CI only and does not publish automatically.
+## APIs and privacy
 
-## Public APIs and privacy
-
-Probes are direct browser requests to the public services in the table. Connection details come from Cloudflare's `one.one.one.one/cdn-cgi/trace`, which returns the public egress IP, country/region, and Cloudflare edge. These are free public endpoints; terms, availability, rate limits, and cross-origin policies are controlled by each provider and may change. Continued availability is not guaranteed.
-
-Probing creates real network requests: the default interval is five seconds per target, and probing pauses when the page is hidden. A shorter interval increases request volume. Connection details are queried once on page load. Ping has no backend, telemetry, or remote fonts; samples stay in the current page's memory, while language and interval preferences are stored in this browser. The IP is masked by default and can be revealed by the user; it is excluded from probe history and exported JSON. Cloudflare can see the visitor's IP when receiving the connection-info request, and all probe targets see normal connection information.
+All probes run directly in the visitor's browser to the eight endpoints listed above. Connection details come from Cloudflare trace. Ping has no backend, accounts, telemetry, or database. Each target is probed every five seconds by default; probing pauses when the page is hidden. Probe providers receive ordinary connection information, while Cloudflare trace receives the visitor's IP. IP is masked by default and is excluded from probe history and exported files.
 
 ## License
 
-This project uses the MIT License; see [LICENSE](LICENSE). The adapted Magic UI Number Ticker source and its license are in [public/magicui-LICENSE](public/magicui-LICENSE).
+This project uses the MIT License: [LICENSE](LICENSE). The adapted Magic UI Number Ticker source and its license are in [src/components/magicui/number-ticker.tsx](src/components/magicui/number-ticker.tsx) and [public/magicui-LICENSE](public/magicui-LICENSE). Font families retain their respective OFL 1.1 licenses.

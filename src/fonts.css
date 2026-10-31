@@ -1,0 +1,52 @@
+/* Self-hosted OFL fonts; Noto Sans SC is subset to the current UI and probes. */
+
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("/fonts/inter-variable.woff2") format("woff2");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212,
+    U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Noto Sans SC";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("/fonts/noto-variable.woff2") format("woff2");
+  unicode-range:
+    U+2013-2014, U+2022, U+2265, U+3001-3002, U+4e2a, U+4e2d, U+4f4d, U+4fe1,
+    U+503c, U+505c, U+5168, U+5173, U+5185, U+51fa, U+5206, U+5237, U+524d,
+    U+52a1, U+52a8, U+5316, U+5355, U+5386, U+53d8, U+53e3, U+53f0, U+53f2,
+    U+540e, U+544a, U+54cd, U+54d4, U+54e9, U+56f4, U+56fd, U+5728, U+5747,
+    U+590d, U+5916, U+591a, U+5927, U+5931, U+5b57, U+5b9a, U+5b9d-5b9e, U+5bbd,
+    U+5bfc, U+5c11, U+5df2, U+5e03, U+5e26, U+5e73, U+5e94, U+5ea6, U+5ef6,
+    U+5f53, U+5f85, U+5fae, U+6001, U+6062, U+606f, U+6296, U+636e, U+63a2,
+    U+63a5, U+6545, U+6548, U+6570, U+65ad, U+65b0, U+65e0, U+65f6, U+663e,
+    U+6682, U+66f4, U+6700, U+6709, U+670d, U+672a, U+672c, U+67e5, U+6837,
+    U+68c0, U+6982, U+6b21, U+6c42, U+6d4b, U+6d77, U+6dd8, U+6e05, U+70b9,
+    U+72b6, U+7387, U+7403, U+7535, U+767e, U+786e, U+793a, U+79bb, U+79d2,
+    U+79fb, U+7a33, U+7a7a, U+7b2c, U+7b49, U+7ebf, U+7edc, U+7edf, U+7ee7,
+    U+7eed, U+7f18, U+7f51, U+8054, U+817e, U+81f3, U+8282, U+8303, U+83dc,
+    U+85cf, U+8a00, U+8b66, U+8ba1, U+8ba4, U+8baf, U+8bc1, U+8bd5, U+8bed,
+    U+8bf7, U+8d25, U+8d85, U+8fb9, U+8fd1, U+8fde-8fdf, U+9009, U+901a, U+901f,
+    U+90e8, U+91c7, U+91cd, U+91cf, U+9488, U+949f, U+95ed, U+95f4, U+9646,
+    U+9690, U+9694, U+969c, U+9879, U+9a8c, U+ff01, U+ff08-ff09, U+ff0c,
+    U+ff1a-ff1b, U+ff1f;
+}
+
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+  src: url("/fonts/jetbrains-variable.woff2") format("woff2");
+  unicode-range:
+    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+    U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212,
+    U+2215, U+FEFF, U+FFFD;
+}

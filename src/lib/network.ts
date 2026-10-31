@@ -16,6 +16,34 @@ export type ProbeTarget = {
 
 export const TARGETS: ProbeTarget[] = [
   {
+    id: "baidu",
+    name: "Baidu",
+    url: "https://www.baidu.com/favicon.ico",
+    region: "cn",
+    method: "opaque",
+  },
+  {
+    id: "bilibili",
+    name: "Bilibili",
+    url: "https://www.bilibili.com/favicon.ico",
+    region: "cn",
+    method: "opaque",
+  },
+  {
+    id: "wechat",
+    name: "WeChat",
+    url: "https://res.wx.qq.com/a/wx_fed/assets/res/NTI4MWU5.ico",
+    region: "cn",
+    method: "opaque",
+  },
+  {
+    id: "taobao",
+    name: "Taobao",
+    url: "https://www.taobao.com/favicon.ico",
+    region: "cn",
+    method: "opaque",
+  },
+  {
     id: "cloudflare",
     name: "Cloudflare",
     url: "https://speed.cloudflare.com/__down?bytes=0",
@@ -37,17 +65,10 @@ export const TARGETS: ProbeTarget[] = [
     method: "opaque",
   },
   {
-    id: "baidu",
-    name: "Baidu",
-    url: "https://www.baidu.com/favicon.ico",
-    region: "cn",
-    method: "opaque",
-  },
-  {
-    id: "bilibili",
-    name: "Bilibili",
-    url: "https://www.bilibili.com/favicon.ico",
-    region: "cn",
+    id: "microsoft",
+    name: "Microsoft",
+    url: "https://www.bing.com/favicon.ico",
+    region: "global",
     method: "opaque",
   },
 ];
@@ -150,96 +171,6 @@ export async function probe(
     clearTimeout(timeoutId);
     signal?.removeEventListener("abort", forwardAbort);
   }
-}
-
-export type ProbeSummary = {
-  /** Latency for the most recent sample that produced an HTTP response. */
-  latest: number | null;
-  median: number | null;
-  p95: number | null;
-  /** Mean absolute delta for adjacent responding samples; failures break the sequence. */
-  jitter: number | null;
-  /** Failed verifiable requests divided by all verifiable requests. */
-  failureRate: number | null;
-  /** All samples, including opaque ones. */
-  count: number;
-  /** Successful responses whose status was visible through CORS. */
-  verified: number;
-};
-
-function median(values: number[]): number | null {
-  if (values.length === 0) return null;
-  const middle = Math.floor(values.length / 2);
-  return values.length % 2 === 0
-    ? (values[middle - 1] + values[middle]) / 2
-    : values[middle];
-}
-
-function rounded(value: number): number {
-  return Math.round(value * 10) / 10;
-}
-
-export function summarize(samples: Sample[]): ProbeSummary {
-  const verifiedSamples = samples.filter(
-    (sample): sample is Sample & { latency: number } =>
-      sample.outcome === "ok" && sample.latency !== null,
-  );
-  const measuredSamples = [...samples]
-    .filter(
-      (sample): sample is Sample & { latency: number } =>
-        sample.latency !== null,
-    )
-    .sort((a, b) => a.at - b.at);
-  const latencies = measuredSamples.map((sample) => sample.latency);
-  const sorted = [...latencies].sort((a, b) => a - b);
-  const recent = samples.reduce<Sample | null>(
-    (latest, sample) =>
-      latest === null || sample.at >= latest.at ? sample : latest,
-    null,
-  );
-  const verifiableSamples = samples.filter(
-    (sample) =>
-      sample.verification !== "opaque" && sample.outcome !== "unverified",
-  );
-  const failures = verifiableSamples.filter(
-    (sample) => sample.outcome === "timeout" || sample.outcome === "error",
-  ).length;
-
-  let absoluteDeltaTotal = 0;
-  let jitterPairs = 0;
-  let previousLatency: number | null = null;
-  for (const sample of [...samples].sort((a, b) => a.at - b.at)) {
-    if (
-      (sample.outcome === "ok" || sample.outcome === "unverified") &&
-      sample.latency !== null
-    ) {
-      if (previousLatency !== null) {
-        absoluteDeltaTotal += Math.abs(sample.latency - previousLatency);
-        jitterPairs += 1;
-      }
-      previousLatency = sample.latency;
-    } else {
-      previousLatency = null;
-    }
-  }
-
-  const midpoint = median(sorted);
-  const tail =
-    sorted.length === 0 ? null : sorted[Math.ceil(sorted.length * 0.95) - 1];
-
-  return {
-    latest: recent?.latency ?? null,
-    median: midpoint === null ? null : rounded(midpoint),
-    p95: tail === null ? null : rounded(tail),
-    jitter:
-      jitterPairs === 0 ? null : rounded(absoluteDeltaTotal / jitterPairs),
-    failureRate:
-      verifiableSamples.length === 0
-        ? null
-        : rounded((failures / verifiableSamples.length) * 100),
-    count: samples.length,
-    verified: verifiedSamples.length,
-  };
 }
 
 export type ConnectionInfo = {

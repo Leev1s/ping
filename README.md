@@ -1,38 +1,47 @@
 # Ping · 网络状态
 
-一个用来观察当前网络状态的中英双语单页应用。它持续测量浏览器发起 HTTP 请求到收到响应头的时间，并展示近期趋势与连接概况。
+Ping 是中英双语的单屏网络状态页，持续显示四个中国大陆与四个国外公开服务的浏览器 HTTP 探测结果。界面使用固定范围的统计图和等宽数字；字体自托管，不请求远程字体。
 
-> 这里的“延迟”是浏览器请求到响应头可供 JavaScript 读取的耗时（近似首字节时间），不是等待完整响应体的时间，也不是 ICMP ping。它不代表完整网络质量或服务端健康度，且会受跨域行为、浏览器调度和本地网络影响。
+> “延迟”表示浏览器请求到响应头可用的时间，近似 TTFB。它不是 ICMP ping，也不代表全网质量或服务端健康度。浏览器调度、网络路径和本地网络都会影响读数。
 
-[GitHub](https://github.com/Leev1s/ping) · [English](README.en.md) · [验收标准](docs/ACCEPTANCE.md)
+[English](README.en.md) · [验收标准](docs/ACCEPTANCE.md) · [产品与设计决策](docs/DESIGN.md)
 
-[产品与设计决策](docs/DESIGN.md) · [Reference research](docs/RESEARCH.md)
+相关研究：[多设备人机工学](docs/ERGONOMICS.md) · [固定范围界面](docs/STABLE-UI.md) · [统计呈现与 Cloudflare Speed Test](docs/STATISTICS.md)
 
-## 功能
+## 页面功能
 
-- 持续测量 5 个公开服务；查看各目标最近 60 次趋势，并查看 Cloudflare 探测的当前值、中位数、P95、抖动与失败率。
-- 可暂停测量，选择 3、5 或 10 秒间隔；页面隐藏时暂停，网络离线时中止当前请求。
-- 中文和英文界面；语言和采样间隔保存在本机浏览器。
-- 默认隐藏 IP 地址；手动导出的 JSON 只包含探测结果，不包含 IP。
-- TypeScript + React + Vite，采用 Magic UI 的 Number Ticker 组件，无自建后端或数据库。
+- 八个探针按「中国大陆」和「国外」分组，每组四项。每个固定大小的服务卡片显示最新延迟、最近 60 次的 P50 和响应状态；点击卡片可查看该目标的统计。
+- 统计区显示所选目标的 P50、有效样本达到 40 个后才显示的 P95、相邻有效样本的平均延迟变化，以及失败次数/尝试总数。固定六档直方图的横轴为 `<50`、`50–100`、`100–250`、`250–500`、`500–1000`、`1000+ ms`，纵轴固定为 `0–100%`。新样本更新既有数字和区间计数，不扩张图表或页面布局。
+- 支持 3、5、10 秒间隔、暂停和恢复；标签页进入后台时暂停采样，浏览器离线时中止当前请求。
+- 中英文即时切换；出口 IP 默认隐藏，可手动显示。导出的 JSON 不含出口 IP；探测数据只留在页面内存中。
+- 首页移除 slogan 和说明段落。常用尺寸在单屏内查看；布局、状态和数字为多种设备预留固定空间。
+
+所有延迟统计均按单一目标计算。只有成功响应和可计时的 opaque 响应进入延迟分布；HTTP 错误、超时或请求失败单独计入“次数/尝试总数”。HTTP 错误虽有响应时间，也不作为有效网络延迟。该计数不代表丢包。opaque 跨域响应会明确标为未验证。说明和验收边界见[统计研究](docs/STATISTICS.md)。
 
 ## 探测目标
 
-每轮会并行请求以下免费公开端点。浏览器可读取 Cloudflare 的 HTTP 状态；其余跨域端点使用不透明请求，只能显示请求耗时，不能据此确认服务返回成功。
+每轮并行请求以下免费公开端点：
 
-| 服务 | URL |
-| --- | --- |
-| Cloudflare | `https://speed.cloudflare.com/__down?bytes=0` |
-| Google | `https://www.gstatic.com/generate_204` |
-| GitHub | `https://github.com/favicon.ico` |
-| 百度 | `https://www.baidu.com/favicon.ico` |
-| 哔哩哔哩 | `https://www.bilibili.com/favicon.ico` |
+| 区域 | 服务 | URL |
+| --- | --- | --- |
+| 中国大陆 | 百度 | `https://www.baidu.com/favicon.ico` |
+| 中国大陆 | 哔哩哔哩 | `https://www.bilibili.com/favicon.ico` |
+| 中国大陆 | 微信 | `https://res.wx.qq.com/a/wx_fed/assets/res/NTI4MWU5.ico` |
+| 中国大陆 | 淘宝 | `https://www.taobao.com/favicon.ico` |
+| 国外 | Cloudflare | `https://speed.cloudflare.com/__down?bytes=0` |
+| 国外 | Google | `https://www.gstatic.com/generate_204` |
+| 国外 | GitHub | `https://github.com/favicon.ico` |
+| 国外 | Microsoft | `https://www.bing.com/favicon.ico` |
 
-页面加载时另向 `https://one.one.one.one/cdn-cgi/trace` 请求一次连接信息；点击“刷新连接信息”会再次请求。各端点的访问策略和可用性由服务提供方决定，可能变化或在特定网络中不可达。
+只有 Cloudflare 探针通过 CORS 读取 HTTP 状态；其余七项采用 opaque 跨域探测，显示请求耗时但不能确认 HTTP 成功。页面加载时还会向 Cloudflare `one.one.one.one/cdn-cgi/trace` 请求出口国家/IP 和边缘节点信息；用户也可手动刷新。端点的访问策略、跨域行为与可用性由服务提供方决定，可能随地区和时间变化。
 
-## 本地运行
+## 字体
 
-需要 Node.js 22 或更新的 LTS 版本。
+页面使用且只使用三款本地自托管字体：**Inter**（拉丁界面文字）、**Noto Sans SC**（简体中文）和 **JetBrains Mono**（延迟数字）。三者使用 SIL Open Font License 1.1，许可证与更新步骤见 [public/fonts/README.md](public/fonts/README.md)。浏览页面时无需向 Google Fonts 请求字体。
+
+## 本地开发
+
+需要 Node.js 22.12 或更新版本。
 
 ```bash
 git clone https://github.com/Leev1s/ping.git
@@ -47,16 +56,15 @@ npm run dev
 npm run check
 npm test
 npm run build
-# 浏览器验收（首次安装 Chromium）
-npx playwright install --with-deps chromium
+npx playwright install --with-deps chromium  # 首次运行浏览器测试时安装
 npm run test:e2e
 ```
 
-GitHub Actions 会在每次 push 和 pull request 中运行上述检查。
+GitHub Actions 会在每次 push 和 pull request 时执行类型检查、单元测试、生产构建与浏览器测试。
 
 ## 部署到 Cloudflare Workers
 
-先安装 Node.js/npm，并准备一个 Cloudflare 账号。首次部署需要在交互终端完成授权：
+首次部署前用交互终端登录 Cloudflare：
 
 ```bash
 npm ci
@@ -65,18 +73,14 @@ npm run build
 npx wrangler deploy
 ```
 
-`wrangler.jsonc` 将 `dist/` 配置为静态资源目录、启用单页应用回退，并为同一 Cloudflare 账号中已托管的 `r3.net.eu.org` 配置自定义域名 `ping.r3.net.eu.org`。Wrangler 会自动配置域名路由、DNS 和证书，无需另行手动设置。部署后可访问 [ping.r3.net.eu.org](https://ping.r3.net.eu.org)。
+[`wrangler.jsonc`](wrangler.jsonc) 从 `dist/` 托管静态资源、启用单页应用回退，并为托管 `r3.net.eu.org` 的 Cloudflare 账号绑定自定义域名 `ping.r3.net.eu.org`。Wrangler 会设置域名、DNS 和证书。上线地址为 [ping.r3.net.eu.org](https://ping.r3.net.eu.org)。
 
-若 fork 后部署到自己的域名，先将 `wrangler.jsonc` 中的 `name` 改为你的 Worker 名称，并把 `routes` 改成你账号中 Cloudflare 托管的域名；若暂时不使用自定义域名，可删去 `routes`，部署到 Wrangler 提供的 `workers.dev` 地址。
+Fork 后部署到自己的域名时，请修改 Worker 名称和 `routes`；只想使用 Wrangler 提供的 `workers.dev` 域名时，可以移除 `routes`。GitHub Actions 默认仅执行 CI；如要自动部署，请在 GitHub Secrets 中提供 Cloudflare API Token 与 Account ID 并自行配置发布流程。
 
-也可以在 GitHub 仓库的 **Settings → Secrets and variables → Actions** 中添加 `CLOUDFLARE_API_TOKEN` 和 `CLOUDFLARE_ACCOUNT_ID`，再配置 GitHub Actions 自动部署。API Token 只存放在 GitHub Secrets 中；默认流程只做 CI，不会自动发布。
+## API 与隐私
 
-## 公开 API 与隐私
-
-探测只从访问者的浏览器直接请求上表中的公开服务；连接概况使用 Cloudflare `one.one.one.one/cdn-cgi/trace`，读取出口 IP、国家/地区和 Cloudflare 边缘节点。接口免费公开使用；服务条款、可用性、速率限制和跨域策略由各服务提供方决定，可能随时变化。项目不承诺这些服务持续可用。
-
-探测会产生真实的网络请求：默认每 5 秒向每个目标发送一次检查，页面隐藏时暂停；较短间隔会增加请求量。连接信息在页面加载时自动查询一次。项目没有后端、遥测或远程字体；采样记录只保留在当前页面内存中，语言与采样间隔保存在本机浏览器。IP 默认在界面遮蔽，用户可主动揭示；它不写入探测历史或导出 JSON。Cloudflare 作为连接信息请求的接收方会看到访问者的 IP，所有探测服务也会看到正常的连接信息。
+所有探测由访问者浏览器直接发往上表八个端点；连接概况来自 Cloudflare trace。Ping 不设置后端、账号、遥测或数据库。默认探测间隔是每个目标五秒，页面隐藏时暂停。访问目标会暴露普通的网络连接信息给相应服务提供方；Cloudflare trace 会收到访问者的 IP。IP 在页面里默认遮蔽，不写入探测历史或导出文件。
 
 ## 许可证
 
-本项目采用 MIT 许可证，详见 [LICENSE](LICENSE)。改编自 Magic UI 的 Number Ticker 源码与其许可证见 [public/magicui-LICENSE](public/magicui-LICENSE)。
+项目使用 MIT 许可证：[LICENSE](LICENSE)。Magic UI Number Ticker 的改编源码及原许可证见 [src/components/magicui/number-ticker.tsx](src/components/magicui/number-ticker.tsx) 和 [public/magicui-LICENSE](public/magicui-LICENSE)。字体各自保留其 OFL 1.1 许可证。

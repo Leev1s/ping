@@ -1,117 +1,35 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Activity,
   ArrowDownToLine,
-  ArrowUpRight,
   Check,
-  ChevronDown,
+  CircleCheck,
   CircleHelp,
+  Ellipsis,
   Eye,
   EyeOff,
   Globe2,
-  Languages,
+  Github,
   Pause,
   Play,
-  Radio,
   RefreshCw,
   RotateCcw,
-  ShieldCheck,
-  Signal,
-  Wifi,
-  Zap,
+  X,
 } from "lucide-react";
 import { NumberTicker } from "./components/magicui/number-ticker";
 import { copy, preference, savePreference, type Lang } from "./lib/i18n";
 import {
   TARGETS,
   probe,
-  summarize,
   fetchConnection,
   type Sample,
+  type ProbeTarget,
 } from "./lib/network";
+import { distribution } from "./lib/distribution";
 
 type History = Record<string, Sample[]>;
-type Connection = Awaited<ReturnType<typeof fetchConnection>>;
-function Sparkline({
-  samples,
-  large = false,
-  label,
-}: {
-  samples: Sample[];
-  large?: boolean;
-  label: string;
-}) {
-  const w = large ? 920 : 150,
-    h = large ? 180 : 36,
-    pad = large ? 12 : 3;
-  const vals = samples.flatMap((s) => (s.latency === null ? [] : [s.latency]));
-  const ceiling = Math.max(100, ...vals) * 1.15;
-  const x = (i: number) => pad + (i / 59) * (w - 2 * pad);
-  const y = (v: number) => h - pad - (v / ceiling) * (h - pad * 2);
-  let path = "",
-    active = false;
-  samples.forEach((s, i) => {
-    if (
-      s.latency === null ||
-      s.outcome === "error" ||
-      s.outcome === "timeout"
-    ) {
-      active = false;
-      return;
-    }
-    path += `${active ? "L" : "M"}${x(i)},${y(s.latency)} `;
-    active = true;
-  });
-  return (
-    <svg
-      className={large ? "chart-svg" : "sparkline"}
-      viewBox={`0 0 ${w} ${h}`}
-      role="img"
-      aria-label={label}
-      preserveAspectRatio="none"
-    >
-      {large &&
-        [0, 1, 2, 3].map((i) => (
-          <line
-            key={i}
-            x1="0"
-            x2={w}
-            y1={pad + (i * (h - 2 * pad)) / 3}
-            y2={pad + (i * (h - 2 * pad)) / 3}
-            className="gridline"
-          />
-        ))}
-      <path
-        d={path}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={large ? 2.4 : 1.8}
-        vectorEffect="non-scaling-stroke"
-      />
-      {samples.map((s, i) =>
-        s.latency === null ||
-        s.outcome === "error" ||
-        s.outcome === "timeout" ? (
-          <circle
-            key={i}
-            cx={x(i)}
-            cy={h - pad}
-            r={large ? 3 : 2}
-            fill="#f18b80"
-          />
-        ) : i === samples.length - 1 || !large ? (
-          <circle
-            key={i}
-            cx={x(i)}
-            cy={y(s.latency)}
-            r={large ? 4 : 1.5}
-            fill="currentColor"
-          />
-        ) : null,
-      )}
-    </svg>
-  );
-}
+const BIN_LABELS = ["<50", "50–100", "100–250", "250–500", "500–1k", "≥1k"];
+
 export default function App() {
   const [lang, setLang] = useState<Lang>(() =>
     preference(
@@ -126,19 +44,23 @@ export default function App() {
   const [visible, setVisible] = useState(!document.hidden);
   const [online, setOnline] = useState(navigator.onLine);
   const [interval, setIntervalSeconds] = useState(() => {
-    const saved = Number(preference("ping-interval", "5"));
-    return [3, 5, 10].includes(saved) ? saved : 5;
+    const n = Number(preference("ping-interval", "5"));
+    return [3, 5, 10].includes(n) ? n : 5;
   });
   const [history, setHistory] = useState<History>({});
-  const [connection, setConnection] = useState<Connection | null>(null);
+  const [selected, setSelected] = useState("cloudflare");
+  const [connection, setConnection] =
+    useState<Awaited<ReturnType<typeof fetchConnection>>>(null);
   const [infoState, setInfoState] = useState<"loading" | "ready" | "error">(
     "loading",
   );
   const [infoVersion, setInfoVersion] = useState(0);
   const [showIP, setShowIP] = useState(false);
-  const [filter, setFilter] = useState<"all" | "global" | "cn">("all");
+  const [menuOpen, setMenuOpen] = useState(false);
   const [notice, setNotice] = useState("");
   const [epoch, setEpoch] = useState(0);
+  const menu = useRef<HTMLDialogElement>(null);
+  const moreButton = useRef<HTMLButtonElement>(null);
   const running = !paused && visible && online;
   useEffect(() => {
     document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
@@ -161,7 +83,7 @@ export default function App() {
     if (!running) return;
     const controller = new AbortController();
     const timers = new Set<ReturnType<typeof setTimeout>>();
-    const run = async (target: (typeof TARGETS)[number]) => {
+    const run = async (target: ProbeTarget) => {
       const started = performance.now();
       try {
         const sample = await probe(target, controller.signal);
@@ -207,17 +129,24 @@ export default function App() {
   }, [infoVersion]);
   useEffect(() => {
     if (!notice) return;
-    const timer = setTimeout(() => setNotice(""), 3500);
+    const timer = setTimeout(() => setNotice(""), 2200);
     return () => clearTimeout(timer);
   }, [notice]);
-  const primary = history[TARGETS[0].id] ?? [];
-  const stats = useMemo(() => summarize(primary), [primary]);
-  const latestAt = Math.max(
-    0,
-    ...Object.values(history).flatMap((items) =>
-      items.length ? [items[items.length - 1].at] : [],
-    ),
-  );
+  useEffect(() => {
+    if (menuOpen) menu.current?.showModal();
+    else menu.current?.close();
+  }, [menuOpen]);
+  const closeMenu = () => {
+    setMenuOpen(false);
+    moreButton.current?.focus();
+  };
+  const nameOf = (target: ProbeTarget) =>
+    target.region === "cn"
+      ? t[target.id as "baidu" | "bilibili" | "wechat" | "taobao"]
+      : target.name;
+  const selectedTarget = TARGETS.find((target) => target.id === selected)!;
+  const samples = history[selected] ?? [];
+  const stats = distribution(samples);
   const total = Object.values(history).reduce(
     (sum, items) => sum + items.length,
     0,
@@ -232,10 +161,10 @@ export default function App() {
   const exportData = () => {
     const payload = {
       app: "Ping",
-      version: 1,
+      version: 2,
       exportedAt: new Date().toISOString(),
       measurement:
-        "Browser HTTP request duration; not ICMP ping. Opaque outcomes do not verify HTTP status.",
+        "Browser HTTP time to response headers; not ICMP. Opaque responses do not verify HTTP status.",
       intervalSeconds: interval,
       targets: TARGETS.map((target) => ({
         ...target,
@@ -252,483 +181,321 @@ export default function App() {
     a.download = `ping-${new Date().toISOString().replaceAll(":", "-")}.json`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    setNotice(t.exportDone);
+    setNotice(t.exported);
+    closeMenu();
   };
-  const metric = (value: number | null | undefined, suffix = "ms") => (
-    <>
-      {value == null ? (
-        <span className="empty-value">—</span>
-      ) : (
-        <NumberTicker value={value} />
-      )}
-      <span className="unit">{suffix}</span>
-    </>
-  );
-  const actual = primary.length ? primary[primary.length - 1] : null;
+  const metric = (value: number | null) =>
+    value === null ? "—" : <NumberTicker value={Math.round(value)} />;
   const metrics = [
-    {
-      label: t.current,
-      value: stats.latest,
-      icon: Zap,
-      foot: t.summary,
-      suffix: "ms",
-      accent: true,
-    },
-    {
-      label: t.median,
-      value: stats.median,
-      icon: Activity,
-      foot: t.window,
-      suffix: "ms",
-    },
-    {
-      label: t.jitter,
-      value: stats.jitter,
-      icon: Signal,
-      foot: t.latencyNote,
-      suffix: "ms",
-    },
-    {
-      label: t.failures,
-      value: stats.failureRate === null ? null : stats.failureRate,
-      icon: ShieldCheck,
-      foot: t.notLoss,
-      suffix: "%",
-    },
+    { label: "P50", value: stats.p50, title: t.median },
+    { label: "P95", value: stats.p95, title: t.sampleGate },
+    { label: t.jitter, value: stats.jitter, title: t.jitter },
   ];
   return (
     <div className="app-shell">
       <header className="topbar">
-        <a href="#" className="brand" aria-label="Ping">
-          <span className="brand-icon">
-            <Activity size={24} />
-          </span>
-          ping<span className="brand-dot">.</span>
-          <span className="brand-divider" />
-          <span className="brand-caption">{t.observatory}</span>
-        </a>
-        <div className="top-actions">
-          <span className="local-label">
-            <span className="tiny-dot" />
-            {t.local}
-          </span>
-          <button
-            className="language-button"
-            onClick={() => setLang(lang === "zh" ? "en" : "zh")}
-            aria-label={lang === "zh" ? "Switch to English" : "切换到中文"}
-          >
-            <Languages size={15} />
-            {lang === "zh" ? "EN" : "中文"}
-          </button>
-          <a
-            className="github-link"
-            href="https://github.com/Leev1s/ping"
-            target="_blank"
-            rel="noreferrer"
-            aria-label="GitHub"
-          >
-            <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor">
-              <path d="M12 .5a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2.2c-3.3.7-4-1.4-4-1.4-.5-1.3-1.3-1.7-1.3-1.7-1.1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1.1 1.8 2.8 1.3 3.4 1 .1-.8.4-1.3.8-1.6-2.7-.3-5.5-1.3-5.5-6 0-1.3.5-2.4 1.2-3.2-.1-.3-.5-1.5.1-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17.3 5.2 18.3 5.5 18.3 5.5c.6 1.7.2 2.9.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.7-5.5 6 .5.4.8 1.1.8 2.2v3.2c0 .3.2.7.8.6A12 12 0 0 0 12 .5Z" />
-            </svg>
+        <div className="identity">
+          <a className="brand" href="/" aria-label="Ping">
+            <Activity aria-hidden="true" size={22} />
+            <span>
+              ping<span className="brand-period">.</span>
+            </span>
           </a>
+          <h1>{t.network}</h1>
+        </div>
+        <div className="toolbar">
+          <span className={`status-badge ${running ? "is-live" : ""}`}>
+            <span className="status-dot" />
+            {stateText}
+          </span>
+          <label className="interval-control">
+            <select
+              aria-label={t.interval}
+              value={interval}
+              onChange={(e) => {
+                const n = Number(e.target.value);
+                setIntervalSeconds(n);
+                savePreference("ping-interval", String(n));
+              }}
+            >
+              {[3, 5, 10].map((n) => (
+                <option key={n} value={n}>
+                  {n} {t.seconds}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            className="control pause-button"
+            aria-label={paused ? t.resume : t.pause}
+            title={paused ? t.resume : t.pause}
+            onClick={() => setPaused(!paused)}
+          >
+            {paused ? <Play size={17} /> : <Pause size={17} />}
+          </button>
+          <button
+            className="control language-button"
+            aria-label={t.language}
+            onClick={() => setLang(lang === "zh" ? "en" : "zh")}
+          >
+            <span className={lang === "zh" ? "language-active" : ""}>中</span>
+            <span className="language-divider">/</span>
+            <span className={lang === "en" ? "language-active" : ""}>EN</span>
+          </button>
+          <button
+            ref={moreButton}
+            className="control"
+            aria-label={t.more}
+            aria-haspopup="dialog"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen(true)}
+          >
+            <Ellipsis size={20} />
+          </button>
         </div>
       </header>
       <main>
-        <section className="page-heading">
-          <div>
-            <div className="eyebrow">
-              <span className="slash">//</span> {t.network}{" "}
-              <span className="version">V1.0</span>
-            </div>
-            <h1>
-              {t.title}
-              <span className="heading-dot" />
-            </h1>
-            <p>{t.subtitle}</p>
-          </div>
-          <div className="heading-right">
-            <span className={`live-badge ${running ? "" : "inactive"}`}>
-              <span className="status-dot" />
-              {stateText}
-            </span>
-            <span className="updated">
-              {t.last}{" "}
-              <span>
-                {latestAt
-                  ? new Date(latestAt).toLocaleTimeString(
-                      lang === "zh" ? "zh-CN" : "en-GB",
-                      { hour12: false },
-                    )
-                  : "—"}
-              </span>
+        <section className="summary" aria-label={t.distribution}>
+          <div className="summary-heading">
+            <h2 className="summary-target">
+              {nameOf(selectedTarget)}
+              <span>HTTP · ms</span>
+            </h2>
+            <span className="sample-count">
+              <span className="mono">{stats.valid}</span> / 60{" "}
+              <span>{t.samples}</span>
             </span>
           </div>
-        </section>
-        <div className="toolbar">
-          <div className="toolbar-start">
-            <Radio size={15} />
-            <span>{t.overview}</span>
-            <span className="toolbar-separator" />
-            <span className="sampling-note">{t.tab}</span>
-          </div>
-          <div className="controls">
-            <label className="interval-control">
-              <span>{t.interval}</span>
-              <select
-                aria-label={t.interval}
-                value={interval}
-                onChange={(e) => {
-                  const value = Number(e.target.value);
-                  setIntervalSeconds(value);
-                  savePreference("ping-interval", String(value));
-                }}
-              >
-                <option value="3">3 {t.seconds}</option>
-                <option value="5">5 {t.seconds}</option>
-                <option value="10">10 {t.seconds}</option>
-              </select>
-              <ChevronDown size={12} />
-            </label>
-            <button
-              className={`button ${paused ? "primary" : ""}`}
-              onClick={() => setPaused(!paused)}
-            >
-              {paused ? <Play size={14} /> : <Pause size={14} />}
-              <span>{paused ? t.resume : t.pause}</span>
-            </button>
-            <button className="button export-button" onClick={exportData}>
-              <ArrowDownToLine size={14} />
-              <span>{t.export}</span>
-            </button>
-          </div>
-        </div>
-        <section className="metric-grid" aria-label={t.overview}>
-          {metrics.map(({ label, value, icon: Icon, foot, suffix, accent }) => (
-            <article
-              key={label}
-              className={`metric-card ${accent ? "metric-accent" : ""}`}
-            >
-              <div className="metric-top">
-                <span>{label}</span>
-                <Icon size={16} />
-              </div>
-              <div className="metric-value">{metric(value, suffix)}</div>
-              <div className="metric-foot">
-                <span
-                  className={`small-indicator ${accent && actual?.outcome === "ok" ? "green" : ""}`}
-                />
-                {foot}
-              </div>
-            </article>
-          ))}
-        </section>
-        <div className="dashboard-grid">
-          <div className="main-column">
-            <section className="panel timeline">
-              <div className="panel-heading">
-                <div>
-                  <h2>{t.history}</h2>
-                  <p>{t.historySub}</p>
+          <div className="summary-content">
+            <div className="metrics">
+              {metrics.map((item) => (
+                <div className="metric" key={item.label} title={item.title}>
+                  <span className="metric-label">{item.label}</span>
+                  <strong className="metric-value">{metric(item.value)}</strong>
                 </div>
-                <span className="chart-tag">
-                  <span className="tiny-dot" />
-                  HTTP
-                </span>
-              </div>
-              <div className="chart-wrap">
-                <div className="chart-axis">
-                  <span>
-                    {Math.ceil(
-                      Math.max(100, ...primary.map((s) => s.latency ?? 0)) *
-                        1.15,
-                    )}{" "}
-                    ms
+              ))}
+              <div className="metric">
+                <span className="metric-label">{t.failures}</span>
+                <strong className="metric-value failed-value">
+                  <span className={stats.failed ? "has-failures" : ""}>
+                    {stats.failed}
                   </span>
-                  <span>0 ms</span>
-                </div>
-                <div className="chart-content">
-                  <Sparkline
-                    samples={primary}
-                    large
-                    label={`${t.history}: ${primary.map((s) => (s.latency === null ? t.error : Math.round(s.latency) + " ms")).join(", ")}`}
-                  />
-                  {!primary.length && (
-                    <div className="chart-empty">
-                      <Activity size={22} />
-                      <span>{t.noData}</span>
+                  <span className="metric-denominator">/{samples.length}</span>
+                </strong>
+              </div>
+            </div>
+            <div className="distribution">
+              <div className="distribution-heading">
+                <span>{t.distribution}</span>
+                <span>0–100%</span>
+              </div>
+              <div
+                className="histogram"
+                role="img"
+                aria-label={`${t.distribution}: ${stats.bins.map((n, i) => `${BIN_LABELS[i]} ms: ${n}`).join(", ")}`}
+              >
+                {stats.bins.map((count, i) => (
+                  <div className="histogram-bin" key={i}>
+                    <div className="bin-track">
+                      <div
+                        className="bin-fill"
+                        style={{
+                          height: `${stats.valid ? (count / stats.valid) * 100 : 0}%`,
+                        }}
+                      />
                     </div>
-                  )}
-                  <div className="chart-bottom">
-                    <span>01</span>
-                    <span>15</span>
-                    <span>30</span>
-                    <span>45</span>
-                    <span>60</span>
+                    <span className="bin-label">{BIN_LABELS[i]}</span>
                   </div>
-                </div>
+                ))}
               </div>
-              <div className="chart-footer">
-                <span>
-                  <span className="line-key" />
-                  Cloudflare <span className="muted">/ {t.range}</span>
-                </span>
-                <span>
-                  {primary.length} / 60{" "}
-                  <span className="muted">{t.samples}</span>
-                </span>
+            </div>
+          </div>
+        </section>
+        <div className="regions">
+          {(["cn", "global"] as const).map((region) => (
+            <section
+              className="region-panel"
+              key={region}
+              data-region={region}
+              aria-label={t[region]}
+            >
+              <div className="region-heading">
+                <h2>
+                  {region === "cn" ? (
+                    <span className="region-mark">CN</span>
+                  ) : (
+                    <Globe2 size={15} />
+                  )}{" "}
+                  {t[region]}
+                </h2>
+                <span className="region-count">04</span>
               </div>
-            </section>
-            <section className="panel services">
-              <div className="panel-heading">
-                <div>
-                  <h2>
-                    {t.endpoints}
-                    <span className="count-badge">
-                      {TARGETS.length.toString().padStart(2, "0")}
-                    </span>
-                  </h2>
-                  <p>{t.endpointsSub}</p>
-                </div>
-                <div className="filters" role="group" aria-label={t.endpoints}>
-                  {(["all", "global", "cn"] as const).map((f) => (
-                    <button
-                      key={f}
-                      onClick={() => setFilter(f)}
-                      aria-pressed={filter === f}
-                      className={filter === f ? "selected" : ""}
-                    >
-                      {t[f]}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div className="service-table">
-                <div className="table-header">
-                  <span>{t.service}</span>
-                  <span>{t.response}</span>
-                  <span>{t.trend}</span>
-                  <span>{t.status}</span>
-                </div>
-                {TARGETS.filter(
-                  (target) => filter === "all" || target.region === filter,
-                ).map((target, index) => {
-                  const samples = history[target.id] ?? [];
-                  const last = samples.at(-1);
-                  const status = !last
-                    ? t.waiting
-                    : last.outcome === "unverified"
-                      ? t.unverified
-                      : last.outcome === "timeout"
-                        ? t.timeout
-                        : last.outcome === "error"
-                          ? t.error
-                          : (last.latency ?? 0) > 500
-                            ? t.slow
-                            : t.healthy;
-                  const color = !last
-                    ? "muted"
-                    : last.outcome === "ok"
-                      ? "green"
-                      : last.outcome === "unverified"
-                        ? "amber"
-                        : "red";
-                  return (
-                    <div className="service-row" key={target.id}>
-                      <div className="service-name">
-                        <span className={`provider-icon provider-${target.id}`}>
-                          {index === 0 && target.id === TARGETS[0].id ? (
-                            <Globe2 size={19} />
-                          ) : (
-                            target.name.slice(0, 1)
-                          )}
-                        </span>
-                        <div>
-                          <strong>
-                            {target.name}
-                            <span className="region-tag">
-                              {t[target.region]}
-                            </span>
-                          </strong>
-                          <span className="service-domain">
-                            {new URL(target.url).hostname}
+              <div className="probe-grid">
+                {TARGETS.filter((target) => target.region === region).map(
+                  (target) => {
+                    const attempts = history[target.id] ?? [];
+                    const last = attempts.at(-1);
+                    const ds = distribution(attempts);
+                    const state = !last
+                      ? "waiting"
+                      : last.outcome === "ok"
+                        ? "healthy"
+                        : last.outcome === "unverified"
+                          ? "unverified"
+                          : last.outcome === "timeout"
+                            ? "timeout"
+                            : "error";
+                    const lastValue =
+                      last &&
+                      (last.outcome === "ok" || last.outcome === "unverified")
+                        ? last.latency
+                        : null;
+                    return (
+                      <button
+                        className={`probe-card ${selected === target.id ? "is-selected" : ""}`}
+                        key={target.id}
+                        aria-pressed={selected === target.id}
+                        onClick={() => setSelected(target.id)}
+                        aria-label={`${nameOf(target)}, ${t[state]}, ${lastValue === null ? "—" : Math.round(lastValue)} ms`}
+                        title={`${new URL(target.url).hostname} · ${t[state]}`}
+                      >
+                        <div className="probe-heading">
+                          <span className="probe-name">{nameOf(target)}</span>
+                          <span
+                            className={`probe-status status-${state}`}
+                            aria-label={t[state]}
+                          >
+                            {state === "healthy" ? (
+                              <CircleCheck size={13} />
+                            ) : state === "unverified" ? (
+                              <CircleHelp size={13} />
+                            ) : (
+                              <span className="status-dot" />
+                            )}
+                            <span>{t[state]}</span>
                           </span>
                         </div>
-                      </div>
-                      <div
-                        className={`service-latency ${last?.latency == null ? "muted" : ""}`}
-                      >
-                        {last?.latency == null ? "—" : Math.round(last.latency)}
-                        <span>ms</span>
-                      </div>
-                      <Sparkline
-                        samples={samples}
-                        label={`${target.name} ${t.trend}`}
-                      />
-                      <span className={`service-status ${color}`}>
-                        <span className="tiny-dot" />
-                        {status}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="services-footer">
-                <span>
-                  <ShieldCheck size={13} />
-                  {t.sampleNote}
-                </span>
-                <button
-                  className="text-button"
-                  onClick={() => {
-                    setEpoch((e) => e + 1);
-                    setHistory({});
-                    setNotice(t.clearDone);
-                  }}
-                >
-                  <RotateCcw size={12} />
-                  {t.reset}
-                </button>
+                        <div className="probe-reading">
+                          <strong className="probe-value">
+                            {metric(lastValue)}
+                          </strong>
+                          <span className="probe-unit">ms</span>
+                          <span className="probe-median">
+                            P50{" "}
+                            <span>
+                              {ds.p50 === null ? "—" : Math.round(ds.p50)}
+                            </span>
+                          </span>
+                        </div>
+                      </button>
+                    );
+                  },
+                )}
               </div>
             </section>
-          </div>
-          <aside className="side-column">
-            <section className="panel connection">
-              <div className="panel-heading">
-                <h2>{t.connection}</h2>
-                <button
-                  className="icon-button"
-                  aria-label={t.refresh}
-                  onClick={() => setInfoVersion((v) => v + 1)}
-                  disabled={infoState === "loading"}
-                >
-                  <RefreshCw
-                    size={14}
-                    className={infoState === "loading" ? "spin" : ""}
-                  />
-                </button>
-              </div>
-              <div className="connection-visual">
-                <div className="orbit orbit-one" />
-                <div className="orbit orbit-two" />
-                <div className="orbit orbit-three" />
-                <div className="wifi-orb">
-                  <Wifi size={34} strokeWidth={1.5} />
-                </div>
-                <span className="visual-status">
-                  <span className="tiny-dot" />
-                  {online ? t.onlineLabel : t.offlineLabel}
-                </span>
-              </div>
-              <div className="ip-box">
-                <div>
-                  <span>{t.ip}</span>
-                  <button
-                    className="icon-button"
-                    aria-label={showIP ? t.conceal : t.reveal}
-                    onClick={() => setShowIP(!showIP)}
-                  >
-                    {showIP ? <EyeOff size={15} /> : <Eye size={15} />}
-                  </button>
-                </div>
-                <strong>
-                  {connection?.ip
-                    ? showIP
-                      ? connection.ip
-                      : "•••.•••.•••.•••"
-                    : "—"}
-                </strong>
-                <span className="ip-caption">{t.connectionNote}</span>
-              </div>
-              {infoState !== "ready" && (
-                <p className="info-message" role="status">
-                  {infoState === "loading" ? t.infoLoading : t.infoError}
-                </p>
-              )}
-              <dl className="connection-details">
-                <div>
-                  <dt>{t.country}</dt>
-                  <dd>{connection?.country ?? "—"}</dd>
-                </div>
-                <div>
-                  <dt>{t.edge}</dt>
-                  <dd>{connection?.colo ?? "—"}</dd>
-                </div>
-                <div>
-                  <dt>{t.protocol}</dt>
-                  <dd>{connection?.tls ?? "—"}</dd>
-                </div>
-              </dl>
-              <div className="privacy-label">
-                <ShieldCheck size={13} />
-                {t.privacy}
-              </div>
-            </section>
-            <section className="method-panel" id="methodology">
-              <span className="method-icon">
-                <CircleHelp size={18} />
-              </span>
-              <h2>{t.methodology}</h2>
-              <p>{t.methodText}</p>
-              <div className="method-divider" />
-              <p>{t.privacyText}</p>
-              <span className="free-label">
-                <Check size={12} />
-                {t.free}
-              </span>
-            </section>
-            <div className="connection-route">
-              <span>{t.route}</span>
-              <div>
-                <span>
-                  <Signal size={13} />
-                  {t.device}
-                </span>
-                <span className="route-dashes" />
-                <ArrowUpRight size={14} />
-                <span>{t.provider}</span>
-              </div>
-            </div>
-          </aside>
-        </div>
-        <div className="bottom-note">
-          <span>
-            <CircleHelp size={13} />
-            {t.legend}
-          </span>
-          <span>
-            {t.total} <b>{total}</b> {t.attempt}{" "}
-            <span className="bottom-divider">/</span> P95{" "}
-            <b>{stats.p95 === null ? "—" : Math.round(stats.p95)}</b> ms
-          </span>
+          ))}
         </div>
       </main>
-      <footer>
-        <a href="#" className="footer-brand">
-          ping<span>.</span>
-        </a>
-        <span>{t.footer}</span>
-        <div>
-          <a href="#methodology">
-            {t.methodLink}
-            <ArrowUpRight size={11} />
-          </a>
-          <a
-            href="https://github.com/Leev1s/ping"
-            target="_blank"
-            rel="noreferrer"
+      <footer className="connection-strip">
+        <div className="connection-ip">
+          <span className="connection-label">IP</span>
+          <span
+            className="ip-value"
+            title={showIP ? connection?.ip : undefined}
           >
-            GitHub
-            <ArrowUpRight size={11} />
-          </a>
-          <span>© {new Date().getFullYear()} Ping</span>
+            {connection?.ip
+              ? showIP
+                ? connection.ip
+                : "•••.•••.•••.•••"
+              : "—"}
+          </span>
+          <button
+            className="control ip-control"
+            aria-label={showIP ? t.conceal : t.reveal}
+            onClick={() => setShowIP(!showIP)}
+          >
+            {showIP ? <EyeOff size={15} /> : <Eye size={15} />}
+          </button>
         </div>
+        <span
+          className="edge-value"
+          title={`${t.edge}: ${connection?.colo ?? t.unavailable}`}
+        >
+          {connection?.country ?? "—"}
+          <span className="edge-divider">/</span>
+          {connection?.colo ?? "—"}
+        </span>
+        <span className="window-count" title={t.window}>
+          <span className="mono">{total}</span> / 480
+        </span>
+        <span
+          className={`connection-state ${infoState}`}
+          aria-label={infoState === "error" ? t.unavailable : undefined}
+        >
+          {infoState === "loading" ? (
+            <RefreshCw size={12} />
+          ) : (
+            <span className="status-dot" />
+          )}
+        </span>
       </footer>
-      {notice && (
-        <div className="toast" role="status">
-          <Check size={16} />
-          {notice}
+      <dialog
+        ref={menu}
+        className="more-menu"
+        aria-label={t.more}
+        onCancel={() => setMenuOpen(false)}
+        onClick={(e) => {
+          if (e.target === menu.current) closeMenu();
+        }}
+        onClose={() => setMenuOpen(false)}
+      >
+        <div className="menu-heading">
+          <span>{t.more}</span>
+          <button className="control" aria-label={t.close} onClick={closeMenu}>
+            <X size={18} />
+          </button>
         </div>
-      )}
+        <button onClick={exportData}>
+          <ArrowDownToLine size={17} />
+          {t.export}
+        </button>
+        <button
+          onClick={() => {
+            setEpoch((e) => e + 1);
+            setHistory({});
+            setNotice(t.cleared);
+            closeMenu();
+          }}
+        >
+          <RotateCcw size={17} />
+          {t.reset}
+        </button>
+        <button
+          onClick={() => {
+            setInfoVersion((v) => v + 1);
+            closeMenu();
+          }}
+        >
+          <RefreshCw size={17} />
+          {t.refresh}
+        </button>
+        <a
+          href="https://github.com/Leev1s/ping"
+          target="_blank"
+          rel="noreferrer"
+        >
+          <Github size={17} />
+          GitHub
+        </a>
+      </dialog>
+      <div className={`notice ${notice ? "is-visible" : ""}`} role="status">
+        {notice && (
+          <>
+            <Check size={14} />
+            {notice}
+          </>
+        )}
+      </div>
     </div>
   );
 }

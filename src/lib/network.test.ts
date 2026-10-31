@@ -1,11 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import {
-  fetchConnection,
-  probe,
-  summarize,
-  type ProbeTarget,
-  type Sample,
-} from "./network";
+import { fetchConnection, probe, type ProbeTarget } from "./network";
 
 const corsTarget: ProbeTarget = {
   id: "test",
@@ -139,67 +133,6 @@ describe("probe", () => {
       name: "AbortError",
     });
     expect(fetchMock).not.toHaveBeenCalled();
-  });
-});
-
-describe("summarize", () => {
-  it("computes verified latency statistics and excludes opaque samples", () => {
-    const samples: Sample[] = [
-      { at: 1, latency: 10, outcome: "ok" },
-      { at: 2, latency: 20, outcome: "ok" },
-      { at: 3, latency: 30, outcome: "ok" },
-      { at: 4, latency: null, outcome: "error" },
-      { at: 5, latency: 12, outcome: "unverified", verification: "opaque" },
-      { at: 6, latency: null, outcome: "error", verification: "opaque" },
-      { at: 7, latency: null, outcome: "timeout" },
-    ];
-
-    expect(summarize(samples)).toEqual({
-      latest: null,
-      median: 16,
-      p95: 30,
-      jitter: 10,
-      failureRate: 40,
-      count: 7,
-      verified: 3,
-    });
-  });
-
-  it("returns null statistics when no verified or verifiable samples exist", () => {
-    expect(summarize([{ at: 1, latency: 50, outcome: "unverified" }])).toEqual({
-      latest: 50,
-      median: 50,
-      p95: 50,
-      jitter: null,
-      failureRate: null,
-      count: 1,
-      verified: 0,
-    });
-  });
-
-  it("reports a single successful sample without inventing jitter", () => {
-    expect(summarize([{ at: 1, latency: 27.3, outcome: "ok" }])).toEqual({
-      latest: 27.3,
-      median: 27.3,
-      p95: 27.3,
-      jitter: null,
-      failureRate: 0,
-      count: 1,
-      verified: 1,
-    });
-  });
-
-  it("does not calculate jitter across a failed sample", () => {
-    const samples: Sample[] = [
-      { at: 1, latency: 10, outcome: "ok" },
-      { at: 2, latency: 100, outcome: "error" },
-      { at: 3, latency: 50, outcome: "ok" },
-      { at: 4, latency: 70, outcome: "unverified", verification: "opaque" },
-      { at: 5, latency: null, outcome: "timeout" },
-      { at: 6, latency: 30, outcome: "ok" },
-    ];
-
-    expect(summarize(samples).jitter).toBe(20);
   });
 });
 
