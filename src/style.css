@@ -1,6 +1,8 @@
 @import "./fonts.css";
 @import "./themes.css";
 :root {
+  --radius-control: 8px;
+  --radius-menu: 14px;
   font-family: Inter, sans-serif;
   color: var(--ink);
   background: var(--canvas);
@@ -103,7 +105,7 @@ input:focus-visible {
   flex-shrink: 0;
   background: transparent;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
 }
 .control:hover,
 .live-control:hover {
@@ -118,7 +120,7 @@ input:focus-visible {
   height: 44px;
   padding: 0 4px;
   flex-shrink: 0;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   background: transparent;
   color: var(--warning);
 }
@@ -603,7 +605,7 @@ main {
   width: 90px;
   height: 44px;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   padding: 0 9px;
   font:
     12px "JetBrains Mono",
@@ -614,7 +616,7 @@ main {
   margin: 8px 12px 0;
   width: calc(100% - 24px);
   height: 44px;
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   color: var(--accent-ink);
   background: var(--accent);
   font-size: 12px;
@@ -625,7 +627,7 @@ main {
   padding: 12px;
   width: min(324px, calc(100vw - 32px));
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-radius: var(--radius-menu);
   background: var(--surface);
   box-shadow: var(--shadow);
   color: var(--ink);
@@ -653,7 +655,7 @@ main {
   padding: 0 12px;
   width: 100%;
   background: transparent;
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   text-align: left;
 }
 .more-menu > button:hover,
@@ -683,7 +685,7 @@ main {
   height: 40px;
   min-width: 140px;
   padding: 0 14px;
-  border-radius: 8px;
+  border-radius: var(--radius-control);
   background: var(--accent);
   color: var(--accent-ink);
   font-size: 12px;
@@ -1054,22 +1056,10 @@ main {
   }
 }
 
-.theme-picker-trigger {
-  width: 130px;
-  height: 44px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--surface);
-  font-size: 11px;
-}
 @media (max-width: 700px) {
   .theme-picker-trigger {
     width: 100px;
     padding: 0 6px;
-  }
-  .theme-picker-trigger .theme-swatch {
-    width: 10px;
-    height: 10px;
   }
   .theme-picker-trigger {
     gap: 4px;

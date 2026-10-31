@@ -4,19 +4,27 @@
 }
 
 .theme-picker-trigger {
+  width: 130px;
+  height: 44px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--muted);
   display: inline-flex;
   align-items: center;
   justify-content: space-between;
   gap: 7px;
   padding: 0 9px;
   font:
-    10px "JetBrains Mono",
-    monospace;
+    11px Inter,
+    sans-serif;
   text-align: left;
 }
 
-.theme-picker-trigger:hover {
+.theme-picker-trigger:hover,
+.theme-picker-trigger[aria-expanded="true"] {
   background: var(--neutral-soft);
+  color: var(--ink);
 }
 
 .theme-picker-trigger > svg {
@@ -30,7 +38,6 @@
   white-space: nowrap;
 }
 
-.theme-swatch,
 .theme-option-swatch {
   flex: 0 0 auto;
   width: 14px;
@@ -55,7 +62,7 @@
   overscroll-behavior: contain;
   padding: 6px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--radius-menu);
   background: var(--surface);
   box-shadow:
     var(--shadow),
@@ -72,7 +79,7 @@
   min-height: 44px;
   gap: 9px;
   padding: 5px 9px;
-  border-radius: 7px;
+  border-radius: var(--radius-control);
   background: var(--canvas);
   color: var(--ink);
   font:
@@ -99,7 +106,7 @@
 .theme-option-swatch {
   width: 18px;
   height: 18px;
-  border-radius: 5px;
+  border-radius: 4px;
 }
 
 .theme-option-check {

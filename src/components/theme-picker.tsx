@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Check, ChevronDown } from "lucide-react";
+import { Check, ChevronDown, Palette } from "lucide-react";
 import "./theme-picker.css";
 
 export const THEME_OPTIONS = [
@@ -121,7 +121,7 @@ export function ThemePicker({
           }
         }}
       >
-        <span className="theme-swatch" aria-hidden="true" />
+        <Palette size={16} strokeWidth={1.5} aria-hidden="true" />
         <span className="theme-picker-label">{selected.label}</span>
         <ChevronDown size={14} aria-hidden="true" />
       </button>
