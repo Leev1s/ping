@@ -1,43 +1,54 @@
-# v2 验收标准
+# Ping acceptance criteria
 
-验收针对 `ping.r3.net.eu.org` 的 Ping v2 单页重设计。视口尺寸均指 Chromium CSS 可视区域。默认界面在验收常见设备尺寸内不需要滚动；内容可用高度小于设计最小值时，允许纵向滚动，禁止裁掉读数或控件。
+These checks define observable behavior for the single-page application. Browser dimensions are CSS viewport dimensions. A normal desktop, tablet, or phone view should fit without page scrolling; short viewports and enlarged text may scroll vertically to preserve readable content. They must not clip information or introduce horizontal page scrolling.
 
-## 功能验收
+## Product and layout
 
-| ID | 可复现标准 | 验收方式 |
+| ID | Acceptance criterion | Check |
 | --- | --- | --- |
-| UI-1 | 简体中文和英文都显示单页“网络状态”标题；页面没有 slogan、介绍段落或营销页脚。 | 两种语言分别检查主页面文案，确认无说明性长段落。 |
-| UI-2 | 默认单屏显示中国大陆 4 个探针、国外 4 个探针、必要顶栏操作、摘要和底栏连接信息。 | 分别测 320×568、375×667、390×844、768×1024、667×375、1280×720、1440×900；两种语言下读取 `scrollWidth/scrollHeight` 并检查元素可见。 |
-| UI-3 | 项目仅加载三个自托管字体家族：Inter、Noto Sans SC、JetBrains Mono；图标/探针文字没有系统字体 fallback，字体文件无第三方域请求。 | 浏览器 Font Loading API 与 Chromium CDP `CSS.getPlatformFontsForNode` 检查家族数和实际渲染字体，并检查外部 font 请求。 |
-| UI-4 | 数字变化、服务错误、语言切换和不同位数的读数都不改变摘要、直方图、探针卡片、区域和应用外框的宽高/坐标。 | 分别采样、点选、切语言并读取 bounding boxes，对比空数据帧和后续帧。 |
-| UI-5 | 所有可点按的状态、间隔、语言、菜单和探针卡片的触控区域至少 44×44 CSS px；正文对背景的对比度至少 4.5:1；跨语言状态可读且文字和图形共同标明状态。 | 测量 DOM 包围盒和前景/背景色比值；逐项检查 aria-label、实时状态、失败/未验证文本与符号。 |
-| NET-1 | 首页自动并行探测八个不同公开端点：大陆百度、哔哩哔哩、微信、淘宝；国外 Cloudflare、Google、GitHub、Microsoft；各 4 个。 | 浏览器 Network 检查每轮 8 个目标请求与对应分组、名称。 |
-| NET-2 | 每个端点独立每 3/5/10 秒请求，HTTP 耗时测到 response headers；单次请求 4.5 秒超时。HTTP 响应不代表 ICMP、带宽或丢包。 | 检查每目标独立计时，含错误/超时、不将空值变为 4500 ms。 |
-| NET-3 | 所有探针均自动循环刷新，暂停立即停止，恢复重启；每个目标任一时刻最多一个请求。隐藏标签页和离线时中止请求并保持停止，页面显示背景/离线状态。 | Browser mock 计数单目标活动请求、暂停/恢复；Playwright 页面隐藏和 `setOffline` 检查中止数量及后台调用。 |
-| DATA-1 | 每目标独立保留最新 60 次尝试；卡片仅显示最新延迟、P50 和状态。点选目标后统计摘要切换至该目标。 | 运行超过 60 个周期，检查导出每个目标正好 60 项；点选不同目标检查 summary target。 |
-| DATA-2 | P50 用有效延迟的中位数；P95 在至少 40 个有效样本后使用 nearest-rank percentile；抖动是时间相邻有效样本绝对差的均值，错误/超时打断相邻对。 | 测试 n=39/40、边界分布和失败样本组；比较精确分位与相邻对公式。 |
-| DATA-3 | 固定 6 个直方图区间 `<50`、`50–100`、`100–250`、`250–500`、`500–1000`、`1000+ ms`；纵轴固定 0–100%，只统计当前目标最近 60 次尝试中的有效响应。新采样不会改图、行、容器几何。 | 覆盖每一档的左闭右开边界和 1000+；20 次连续采样前后比对 histogram bounding boxes。 |
-| DATA-4 | 显示 HTTP 错误与超时次数/总尝试数，不称为丢包率；HTTP error、timeout 和 fetch rejected 均算失败。HTTP error 即使有响应头时间也不进入有效分布、P50、P95 或抖动；timeout 与 fetch rejected 没有响应测量值。Opaque 已取得响应头的样本计时但标“未验证”，可以进入延迟分布，但不能宣称 HTTP 状态已验证。 | 注入 HTTP 500、timeout、opaque响应和 opaque拒绝；核对各计数、样本分母和状态标签。 |
-| PRIV-1 | 没有自有后端、遥测、账号或数据库；探测和 Cloudflare trace 都由浏览器直接发起。IP 默认遮蔽，显示 IP 不写入历史或导出；历史在页面刷新后清空。 | 检查网络请求主机、应用源码、初始及手动 reveal 状态、导出文件与刷新后的历史。 |
-| DOC-1 | 中英 README 记录准确端点、三字体许可、隐私、标准设备和 `npx wrangler deploy` 流程。研究文档链接可打开。 | 检查英文和中文 README、Cloudflare自定义域 fork说明及三个研究文档链接。 |
-| DEP-1 | `npm run build` 构建 `dist/`；Wrangler 用 Workers 静态资产和 SPA fallback 部署。CI 对 push 和 pull request 运行类型、单测、build 和浏览器测试。 | 检查干净安装构建、Cloudflare 部署状态、深层路由 200 和 GitHub Actions 全部通过。 |
+| UI-1 | The application has one English-language interface, with one “Network status” heading. No locale toggle, Chinese UI copy, slogan, or explanatory paragraph appears in the page. | Playwright audits the page language, rendered text, heading, and absence of a language control. |
+| UI-2 | One page shows Cloudflare and IPinfo connection cards, all eight probe cards, two region groups with four probes each, and the session summary. | Load the page and verify two connection cards, eight probes, and the 4/4 split. |
+| UI-3 | Exactly three local font families are used: Space Grotesk for brand/headings, Inter for interface text, and JetBrains Mono for measurements. The app makes no third-party font requests. | Wait for `document.fonts.ready`; inspect loaded families and font resource origins. |
+| UI-4 | At 100% zoom, the page has no horizontal or vertical overflow at 320×568, 375×667, 390×844, 667×375, 768×1024, 1366×768, and 1440×900. At a very short height or enlarged text, vertical scrolling is allowed; content remains reachable and no horizontal overflow or clipping is introduced. | Playwright compares `scrollWidth`/`scrollHeight` with the viewport at the seven common sizes; inspect short-height and enlarged-text behavior separately. |
+| UI-5 | Sampling changes values and plot marks without changing the dimensions or positions of the eight cards and their chart frames. Waiting, success, outliers, and failures do not expand the layout. | Compare card and plot bounding boxes before samples, after valid samples, after an outlier, after a scale change, and after an HTTP error. |
+| UI-6 | Interactive controls have clear names, keyboard focus is visible, and status meaning is conveyed by text or symbols as well as color. Normal text meets at least 4.5:1 contrast; large text and non-text indicators meet the applicable WCAG contrast threshold. Common controls target 44×44 CSS pixels. | Audit control names and focus order; measure target bounds and calculate contrast ratios for real foreground/background pairs. |
 
-## 研究与协作
+## Sampling and statistics
 
-- [多设备人机工学研究](ERGONOMICS.md)给出实际 CSS 视口、触控面积、字体及颜色验收方法。
-- [固定范围界面研究](STABLE-UI.md)记录样本变化时不改动视觉边界的方案。
-- [统计与 Cloudflare Speed Test 研究](STATISTICS.md)记录统计公式、服务状态边界和固定直方图选择。
+| ID | Acceptance criterion | Check |
+| --- | --- | --- |
+| NET-1 | Eight distinct public endpoints are probed: Baidu, Bilibili, WeChat, and Taobao in Mainland China; Cloudflare, Google, GitHub, and Microsoft in International. | Inspect browser requests and the probe cards; confirm exactly four cards per group. |
+| NET-2 | Probes start on page load and repeat continuously at the selected 3, 5, or 10-second cadence (5 seconds by default). A target never has more than one request in flight. Each request times out after 4.5 seconds. | Use fake network responses and clock control; count requests per target, in-flight requests, and timeout outcomes. |
+| NET-3 | Pause stops sampling; resume restarts it. Hidden tabs and offline state stop active work. | Advance a controlled clock while paused, hidden, or offline; confirm no later probe starts and that sampling resumes when enabled. |
+| NET-4 | Cloudflare uses CORS and can report HTTP success or error. The other seven use opaque responses and are labelled HTTP-unverified; timing them does not imply the status was verified. | Mock CORS success/error, opaque response, timeout, and rejected-fetch cases; inspect state labels and counts. |
+| DATA-1 | Each probe shows its latest valid response time, target status, a fixed horizontal box plot with measurement points, P50, P95, jitter, attempt count, and failed-attempt count. A failed latest attempt has no fabricated latency reading. | Verify each card before and after successful, opaque, failed, and timed-out responses. |
+| DATA-2 | After five valid readings, Q1, median, and Q3 define the box; Tukey 1.5 × IQR fences define the whisker endpoints. Valid observed outliers remain visible as individual points. The log(1 + ms) axis is fixed at 0–1,000 ms by default and can be switched to 0–5,000 ms. | Test known distributions and outliers; verify the five-reading threshold, whisker bounds, dots, scale toggle, and stable plot geometry. |
+| DATA-3 | Only finite, non-negative successful or opaque response times enter latency statistics. HTTP errors, timeouts, and rejected fetches count as failures, not latency or packet loss. P95 uses nearest rank and appears at 40 valid samples. Jitter is the mean absolute difference between adjacent valid samples; a failed attempt breaks the pair. | Unit tests cover outcome filtering, quantiles at the 40-sample threshold, and adjacent-pair calculations across failures. |
+| DATA-4 | Every statistic uses all eligible samples in the selected time window. Plot downsampling affects only the rendered points and does not affect summary statistics. | Feed more than 120 samples into a window and compare statistics with the full input set. |
 
-三个 subagent 分别负责上述研究；主 agent 整合 UI、探针、统计 helper、测试和文档。每项实现都对应本表一个或多个验收编号，未验证事项明确保持待验证。
+## History and connection information
 
-## 当前状态
+| ID | Acceptance criterion | Check |
+| --- | --- | --- |
+| HIST-1 | Each probe retains at most 1,200 attempts, including failures; across eight probes the cap is 9,600 records. Sampling and aggregate session counters continue after the cap, with the oldest record evicted per target. | Append beyond the cap and verify count, newest/oldest timestamps, and continued sampling. The browser test also runs beyond 60 attempts. |
+| HIST-2 | A selected 5, 30, or 60-minute window filters statistics and plot points. Each plot draws at most 120 valid points; older dots become more transparent based on their actual age. | Verify time-window filtering, the 120-point limit, and opacity at known sample ages. |
+| HIST-3 | History exists only in the current page session. Clear history resets retained samples and counters; refresh or close clears all samples. JSON export includes retained per-probe samples and counters, but no connection IP address. | Clear, refresh, and export; check bounds and search serialized JSON for both mocked connection addresses. |
+| IP-1 | On page load, and on manual refresh only, Cloudflare Trace and IPinfo are each queried once. Their results remain provider-specific and can be partially available if one provider fails. | Inspect requests and mock each provider's success/failure independently. |
+| IP-2 | Cloudflare information includes its observed address/family, country code, `colo`, TLS version, and WARP status when supplied. IPinfo information includes its observed address/family, location, ASN, and organization when supplied. Both addresses start masked and can be shown or hidden by the user. | Verify provider-specific fields, independent IP family handling, partial data, and the show/hide control. |
+| PRIV-1 | Probe and connection requests go from the visitor's browser to the providers. Ping has no server-side IP lookup, accounts, analytics, or database; addresses are not stored in probe history or exports. | Inspect network destinations, source, in-memory samples, and exported JSON. Document that each contacted provider receives the visitor's normal connection metadata. |
 
-| 检查 | 结果 |
-| --- | --- |
-| 类型检查、生产构建 | 本机通过（本轮实现负责人报告）。 |
-| 单元测试 | 17 项通过。 |
-| 浏览器验收 | 最终回归 7 项通过（Chromium，15.6 秒），包括固定数字栏宽、字体预载及真实渲染字体检查。覆盖八探针、区间、响应状态、单请求、60 项历史及七种双语视口。 |
-| v2 生产部署 | `npm run build` 与 `npx wrangler deploy` 成功；Cloudflare 版本 `97271eb9-b176-408a-b9bd-14931a17357f`，自定义域名 [ping.r3.net.eu.org](https://ping.r3.net.eu.org/)。 |
-| v2 远端 CI | 提交后由 GitHub Actions 重跑类型、17 项单测、构建与 7 项浏览器测试；以对应 commit 的工作流结果为准。 |
+## Documentation and release
 
-以上记录按当前负责人报告更新。部署后补充 commit、浏览器、视口和远端检查链接。
+| ID | Acceptance criterion | Check |
+| --- | --- | --- |
+| DOC-1 | Root README is English-first with a Chinese-language README link. The translated README describes the docs in Chinese without claiming the app UI supports Chinese. | Check both README files, internal links, endpoint list, privacy notes, font licenses, and current controls. |
+| DOC-2 | README describes local development and Cloudflare Workers deployment with `npx wrangler login`, `npm run build`, and `npx wrangler deploy`, plus fork/domain instructions. | Follow the documented commands in a clean checkout and verify `wrangler.jsonc` matches the instructions. |
+| DOC-3 | Design, acceptance, brand, IP, and history documents describe current implementation and point to primary sources. Superseded research notes and the duplicate README.en.md are removed. | Check internal links from both READMEs; confirm external citations target the cited standards or providers. |
+| SIM-1 | The YAGNI cleanup removes the unused locale layer and Chinese font pipeline, the obsolete histogram helper, and the duplicate two-line Vitest config. Superseded research documents are consolidated into current design, acceptance, history, IP, and brand references. | Inspect source/config for retained code paths and verify the retired files are absent. |
+| DEP-1 | CI runs type checking, unit tests, build, and Playwright tests on pushes and pull requests. The Cloudflare Worker serves `dist/` with single-page-app fallback on `ping.r3.net.eu.org`. | Inspect `.github/workflows/ci.yml`, deploy the configured Worker, and request the root and a client-side path. |
+
+## Current verification record
+
+Local checks pass: 22 unit tests and 5 Playwright tests (24.2 seconds), plus TypeScript and production build. The browser checks cover independent IP sources, continuous sampling beyond 60 attempts, bounded history/points, age opacity, box plots, fixed logarithmic axes, errors, privacy, three self-hosted fonts and seven common viewports. The final local run includes the statistics-result reuse and logarithmic-axis changes; CI reruns the complete checks for the release commit.
+
+Cloudflare deployment succeeded via `npx wrangler deploy`: version `da4f7571-36e3-44e6-97aa-4d2bb53adefc` at https://ping.r3.net.eu.org/. Repository visibility and release-commit CI are separately verified during publication; the Actions result attached to the commit is authoritative.

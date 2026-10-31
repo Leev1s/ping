@@ -1,38 +1,90 @@
-# Ping 产品与实现决策
+# Ping design and implementation decisions
 
-## 核心问题
+## Product scope
 
-这个单页只回答三个问题：八个目标当前的 HTTP 延迟、最近一次测量是否失败，以及选中目标的短窗分布。用户要求的域名为 `ping.r3.net.eu.org`；产品不做带宽测速，也不把浏览器 HTTP 请求包装成 ICMP ping。
+Ping answers one practical question: how long does this browser take to receive HTTP response headers from these eight service endpoints on the current network? The page shows four Mainland China targets and four International targets. It does not attempt to measure bandwidth, ICMP, packet loss, or the health of an entire provider.
 
-主要参考：[Cloudflare 网络状态页](https://cf.090227.xyz/#/network)、[Cloudflare Speed Test 与统计方法](STATISTICS.md)、[多设备人机工学建议](ERGONOMICS.md) 和 [固定范围界面研究](STABLE-UI.md)。
+The product takes the information hierarchy of [cf.090227.xyz's network page](https://cf.090227.xyz/#/network) and the connection-information presentation of [ip.skk.moe](https://ip.skk.moe/) as references. Ping keeps connection details and ongoing measurements together on one screen, with independent results for each target.
 
-## 信息与呈现
+## Information hierarchy
 
-| 区域 | 内容 | 验收 |
-| --- | --- | --- |
-| 顶栏 | 网络状态、实时/暂停状态、3/5/10 秒间隔、中英切换、更多菜单。 | 功能全屏可用、44 px 触控目标，语言切换持久化。 |
-| 中国大陆 / 国外 | 每组四个服务，每卡片仅显示服务名、当前延迟、P50、状态；选择目标后更新统计区。 | 总共八项；当前数值变化时卡片边界不移动。 |
-| 统计区 | 所选目标的 P50、有效样本数达 40 后的 P95、相邻有效测量的平均绝对差、失败次数/尝试数，以及六个固定延迟区间的分布。 | 统计仅属于选中目标；固定 0–100% 比例，直方图和页面不随样本重排。 |
-| 底栏 | 默认隐藏的 IP、国家/边缘代码、窗口累计请求数。 | IP 需用户手动显示；导出排除 IP。 |
+| Area | Information and behavior |
+| --- | --- |
+| Header | Ping wordmark, “Network status”, current sampling state, history-window selector, pause/resume, and a compact options menu. There is no slogan or introductory paragraph. |
+| Connection panel | Separate Cloudflare and IPinfo result cards. Each card keeps its observed address attached to its own provider-specific fields. Addresses start masked; refresh is manual after the initial page load. |
+| Probe groups | Mainland China and International, four fixed cards each. Every card shows provider, endpoint hostname, latest reading, verification/failure state, a box plot with sample points, P50/P95/jitter, and attempt counts. |
+| Session footer | Session duration, total checks, retained sample count/cap, and failed attempts. These counters continue to increase while sampling runs even after the raw-history cap is reached. |
+| Options | Set the 3/5/10-second sampling interval; switch the fixed chart scale between 0–1,000 and 0–5,000 ms; export or clear session history; refresh connection information. |
 
-主页不显示 slogan、解释段落、营销文案、大面积趋势图或单点放大动画。用户通过卡片数字读当前状态，通过固定六档直方图比较短窗分布；P95只在有效样本数达到 40 时显示。样本和空位都占据预留区域；采样只更新值与分布，不改变布局大小。
+## Probe and measurement model
 
-## 探针与统计边界
+All eight probes are initiated by the visitor's browser. Each target is sampled independently, with a default interval of five seconds and no overlapping requests for that target. A URL cache key and `cache: no-store` avoid reusing a cached response; `performance.now()` measures elapsed request time. A request is aborted after 4.5 seconds. Sampling stops when the page is hidden, the browser goes offline, or the user pauses it.
 
-探针各四项：中国大陆百度、哔哩哔哩、微信、淘宝；国外 Cloudflare、Google、GitHub、Microsoft。每个目标独立每 3/5/10 秒探测，最近 60 次采样留在当前页面内存。Cloudflare 状态可经 CORS 验证，其余 opaque 请求只提供耗时，不能证明目标返回 HTTP 成功。详情见 [探针实现](../src/lib/network.ts)。
+The Cloudflare endpoint permits CORS, so the browser can read and classify its HTTP status. The other seven endpoints use opaque `no-cors` responses: the browser can time a response but cannot inspect its status. The UI labels these measurements “HTTP unverified.” A non-success HTTP response, timeout, or rejected fetch counts as a failed attempt. A response time attached to a non-success HTTP status is not treated as valid latency.
 
-P50 和 P95 只对选中服务的有效 HTTP 时间样本计算：成功状态与可计时但状态未验证的响应计入；HTTP 错误、超时和 fetch 失败计入失败次数并从有效延迟统计中排除。抖动指按时间相邻的有效样本之间平均绝对延迟差，失败会打断配对；失败统计按失败次数/总尝试次数，不使用“丢包率”。固定直方图区间 `<50`、`50–100`、`100–250`、`250–500`、`500–1000` 和 `1000+ ms`，纵轴固定 `0–100%`。公式和限制见[统计研究](STATISTICS.md)。
+| Group | Public endpoint |
+| --- | --- |
+| Baidu | `https://www.baidu.com/favicon.ico` |
+| Bilibili | `https://www.bilibili.com/favicon.ico` |
+| WeChat | `https://res.wx.qq.com/a/wx_fed/assets/res/NTI4MWU5.ico` |
+| Taobao | `https://www.taobao.com/favicon.ico` |
+| Cloudflare | `https://speed.cloudflare.com/__down?bytes=0` |
+| Google | `https://www.gstatic.com/generate_204` |
+| GitHub | `https://github.com/favicon.ico` |
+| Microsoft | `https://www.bing.com/favicon.ico` |
 
-## 设备适配与字体
+These are public HTTP endpoints, not contractual probe APIs. Their availability, CORS policy, response, and regional routing are controlled by their providers and can change.
 
-目标是 320×568 至桌面宽屏常见设备单屏呈现八个探针与主要控制。UI 使用可测量的浅色高对比配色，表格、统计字样和状态色分工明确；控制触控区设计为 44×44 px。小于可用窗口最小高度或用户放大字体时，完整内容仍优先可访问，可纵向滚动。
+## Box plot and statistics
 
-全页仅使用三款自托管字体：Inter（拉丁文字）、Noto Sans SC（简体中文）和 JetBrains Mono（测量数字），随项目附带 OFL 1.1 许可文件。没有远程字体请求。多设备和字体验收见 [docs/ERGONOMICS.md](ERGONOMICS.md)。
+Each probe has one fixed-size horizontal Tukey box plot. Q1 and Q3 delimit the box, the median is its center line, and whiskers reach the most extreme observed values within the 1.5 × IQR fences. Q1, median, and Q3 use linear interpolation over the sorted values. The box and whiskers appear after five valid measurements; individual readings are shown as sample dots. Outliers remain visible as dots without stretching the box. A fixed `log(1 + latencyMs)` position transform is shared by every probe; zero is valid, and both small delays and the long tail remain readable. See [symlog scales](https://d3js.org/d3-scale/symlog) for this zero-safe transformation; Ping uses `Math.log1p` directly, without adding D3. All quartiles and Tukey fences are computed on raw milliseconds before projection. The user can choose 0–1,000 or 0–5,000 ms. Values outside that scale remain visible in the card's numeric reading and at the plot boundary. New samples never rescale the chart or change card geometry.
 
-## 名称、域名与部署
+- **Valid latency:** finite, non-negative response time from an HTTP-successful or opaque response. Opaque results remain explicitly unverified.
+- **P50:** median of all valid latency samples in the selected time window.
+- **P95:** nearest-rank 95th percentile; shown after 40 valid samples. This short-window statistic is descriptive, not an SLA or service score.
+- **Jitter:** mean absolute difference between adjacent valid response times. A failure breaks the adjacent pair.
+- **Failures:** HTTP errors, timeouts, and rejected fetches are counted as failed attempts, separate from latency. They are not packet loss.
 
-产品名称 Ping 和 `ping.r3.net.eu.org` 由用户指定。Worker 静态托管在既有 Cloudflare 区域；`npx wrangler deploy` 同时配置域名，README 记录本地部署与 fork 后的域名修改步骤。
+Statistics use every eligible sample in the selected window. The plot's point limit is only a rendering limit: downsampling does not change P50, P95, whiskers, or jitter. Cloudflare Speed Test is a useful reference for separating latency, jitter, and bandwidth measurements; Ping adopts no download/upload test or provider-specific quality score. See [Cloudflare Speed Test: About](https://speed.cloudflare.com/about), the [measurement engine](https://github.com/cloudflare/speedtest), and [NIST's box-plot definition](https://www.itl.nist.gov/div898/handbook/eda/section3/boxplot.htm).
 
-## 奥卡姆剃刀
+## Continuous history and fixed visual bounds
 
-保留 React、TypeScript、Vite、Lucide 图标、一个 Magic UI Number Ticker，和直方图统计逻辑；不用图表框架、状态管理器、i18n 包、数据库、账号、服务端代理、第三方字体请求或带宽测量。每个样本只写入它自己的探针窗口，导出排除连接身份。端点策略与可用性由服务方决定，界面如实标记失败和状态未知，不用固定数据替补。
+The history selector offers 5, 30, and 60 minutes. Each probe retains its latest 1,200 attempts in page memory, including failures. At the default five-second interval this is about 100 minutes per probe; the cap represents about 60 minutes at three seconds or 200 minutes at ten seconds. Across eight probes, no more than 9,600 sample records are retained. Sampling and aggregate session counters continue after the cap; each new sample replaces that probe's oldest retained sample.
+
+Each plot draws at most 120 valid samples in the chosen time window. If the window contains more, points are selected across the time range while preserving endpoints and observed latency extrema when the point budget permits. Point opacity is based on elapsed age in the selected window: the oldest marks are most transparent and the newest are fully opaque. The chart frame, axes, labels, and card dimensions remain fixed as samples arrive.
+
+Raw history is session-only. It is not stored in local storage or sent to a Ping server; refresh or close clears it. JSON export contains the retained per-probe samples and counters, not either connection IP address. The full retention rationale and checks are in [HISTORY.md](HISTORY.md).
+
+## Connection information and API limits
+
+At startup, and again only after a manual refresh, Ping requests two public no-key endpoints in parallel:
+
+- [Cloudflare Trace](https://developers.cloudflare.com/fundamentals/reference/cdn-cgi-endpoint/) supplies the address and family it observes, country code, serving data center (`colo`), TLS version, and WARP status. A `colo` code identifies the processing data center; anycast routing does not guarantee that it is the geographically nearest one ([Cloudflare routing note](https://developers.cloudflare.com/support/troubleshooting/general-troubleshooting/geographic-traffic-routing/)).
+- [IPinfo's public JSON endpoint](https://ipinfo.io/json) supplies its observed address and family, city, region, country, ASN, and organization when available. Its unauthenticated public API is limited to 1,000 requests per day per source IP; that quota is shared by users behind the same public IP and can result in rate limiting ([current IPinfo quota details](https://support.ipinfo.io/hc/en-us/articles/34121895556242-Legacy-Free-API-vs-IPinfo-Lite)).
+
+The two providers' addresses and metadata remain separate; one provider's fields are never presented as attributes of the other's address. If a provider fails, the other provider's data remains useful. Requests are made from the visitor's browser, so those providers receive ordinary connection metadata and the visitor's source IP. The interface masks both addresses by default. Addresses are not added to probe samples or exports. More details are in [IP.md](IP.md).
+
+## Device and visual system
+
+The ordinary desktop, tablet, portrait-phone, and landscape-phone layouts are designed to expose the connection panel, all eight probes, and primary controls without page scrolling. The application has a minimum content height for readability; at very short viewports or enlarged text, vertical scrolling may return so content remains accessible. The layout must not hide controls or clip the measurements to preserve a nominal “one-screen” target. WCAG 2.2 Reflow requires avoiding two-dimensional scrolling at a 320 CSS-pixel width; it does not require every page to fit every available height ([WCAG 2.2, SC 1.4.10](https://www.w3.org/TR/WCAG22/#reflow)).
+
+The self-hosted type system contains exactly three families: Space Grotesk for brand/section headings, Inter for interface labels, and JetBrains Mono for latency and measurement figures. Color and mark tokens, local brand assets, and type roles are listed in [BRAND.md](BRAND.md). Interactive controls target at least 44 CSS pixels where layout allows. Text, control boundaries, and status indicators should be evaluated against WCAG contrast guidance; status uses labels or symbols as well as color ([WCAG contrast minimum](https://www.w3.org/TR/WCAG22/#contrast-minimum), [target size](https://www.w3.org/TR/WCAG22/#target-size-minimum)).
+
+## YAGNI decisions
+
+- The app has one English interface. Locale dictionaries, language selection, Chinese font assets, and a glyph-subset generator were removed; the repository keeps an English and a Chinese-language README for readers.
+- The old fixed histogram helper and its separate tests were removed when the app moved to one box-statistics helper. Statistics are not duplicated in a second visualization path.
+- Vitest's test include rule now shares the Vite config rather than living in a second two-line config file.
+- The former research notes were consolidated into this decision record, [ACCEPTANCE.md](ACCEPTANCE.md), and the focused [HISTORY.md](HISTORY.md), [IP.md](IP.md), and [BRAND.md](BRAND.md) references. The retained docs describe shipped behavior and checks rather than a parallel speculative architecture.
+- Ping has no charting framework, state-management framework, backend, accounts, database, analytics, bandwidth test, or persistent sample store. The copied [Magic UI Number Ticker](../src/components/magicui/number-ticker.tsx) remains a small requested component.
+
+## Research and source references
+
+- User-provided product references: [cf.090227.xyz network page](https://cf.090227.xyz/#/network) and [ip.skk.moe](https://ip.skk.moe/).
+- Measurement terminology and metric separation: [Cloudflare Speed Test About](https://speed.cloudflare.com/about), [Cloudflare Speed Test source](https://github.com/cloudflare/speedtest), and [Cloudflare's explanation of its speed test](https://blog.cloudflare.com/how-does-cloudflares-speed-test-really-work/).
+- Tukey box plots and the 1.5 × IQR fences: [NIST/SEMATECH e-Handbook](https://www.itl.nist.gov/div898/handbook/eda/section3/boxplot.htm).
+- Responsive reflow, text contrast, and target sizing: [W3C WCAG 2.2](https://www.w3.org/TR/WCAG22/).
+- Public IP fields and provider behavior: [Cloudflare `/cdn-cgi/` documentation](https://developers.cloudflare.com/fundamentals/reference/cdn-cgi-endpoint/), [Cloudflare `colo` routing note](https://developers.cloudflare.com/support/troubleshooting/general-troubleshooting/geographic-traffic-routing/), and [IPinfo's API quota information](https://support.ipinfo.io/hc/en-us/articles/34121895556242-Legacy-Free-API-vs-IPinfo-Lite).
+- Fixed retained sample bounds and browser memory behavior: [MDN JavaScript memory management](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Memory_management) and [MDN Resource Timing](https://developer.mozilla.org/en-US/docs/Web/API/Performance_API/Resource_timing); implementation checks are summarized in [HISTORY.md](HISTORY.md).
+
+Box-plot method references: [NIST box plots with fences](https://www.itl.nist.gov/div898/handbook/eda/section3/boxplot.htm) and [R sample quantile definitions](https://stat.ethz.ch/R-manual/R-devel/library/stats/html/quantile.html) (type 7 for Q1/Q2/Q3). P95 uses the separately documented nearest-rank rule.

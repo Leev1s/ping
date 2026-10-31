@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchConnection, probe, type ProbeTarget } from "./network";
+import { probe, type ProbeTarget } from "./network";
 
 const corsTarget: ProbeTarget = {
   id: "test",
@@ -133,84 +133,5 @@ describe("probe", () => {
       name: "AbortError",
     });
     expect(fetchMock).not.toHaveBeenCalled();
-  });
-});
-
-describe("fetchConnection", () => {
-  it("parses Cloudflare trace fields and leaves missing values optional", async () => {
-    const body = "ip=203.0.113.7\nloc=SG\ncolo=SIN\ntls=TLSv1.3\nwarp=off\n";
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValue(new Response(body, { status: 200 }));
-    vi.stubGlobal("fetch", fetchMock);
-
-    await expect(fetchConnection()).resolves.toEqual({
-      ip: "203.0.113.7",
-      country: "SG",
-      colo: "SIN",
-      tls: "TLSv1.3",
-      warp: "off",
-    });
-    expect(String(fetchMock.mock.calls[0][0])).toContain(
-      "one.one.one.one/cdn-cgi/trace",
-    );
-  });
-
-  it("returns null when the trace endpoint cannot be read", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn().mockResolvedValue(new Response(null, { status: 503 })),
-    );
-
-    await expect(fetchConnection()).resolves.toBeNull();
-  });
-
-  it("times out after 4.5 seconds", async () => {
-    vi.useFakeTimers();
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(
-        (_url: string, init: RequestInit) =>
-          new Promise<Response>((_resolve, reject) => {
-            init.signal?.addEventListener(
-              "abort",
-              () => reject(new DOMException("Aborted", "AbortError")),
-              { once: true },
-            );
-          }),
-      ),
-    );
-
-    const pending = fetchConnection();
-    await vi.advanceTimersByTimeAsync(4_500);
-
-    await expect(pending).resolves.toBeNull();
-  });
-
-  it("propagates external cancellation and removes its abort listener", async () => {
-    const controller = new AbortController();
-    const addListener = vi.spyOn(controller.signal, "addEventListener");
-    const removeListener = vi.spyOn(controller.signal, "removeEventListener");
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(
-        (_url: string, init: RequestInit) =>
-          new Promise<Response>((_resolve, reject) => {
-            init.signal?.addEventListener(
-              "abort",
-              () => reject(new DOMException("Aborted", "AbortError")),
-              { once: true },
-            );
-          }),
-      ),
-    );
-
-    const pending = fetchConnection(controller.signal);
-    controller.abort();
-
-    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
-    const [eventName, listener] = addListener.mock.calls[0];
-    expect(eventName).toBe("abort");
-    expect(removeListener).toHaveBeenCalledWith("abort", listener);
   });
 });

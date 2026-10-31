@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" fill="none" role="img" aria-labelledby="title desc">
+  <title id="title">Ping network mark</title>
+  <desc id="desc">A network probe reaches a target and returns its measurement.</desc>
+  <path d="M4 10h11.5m0 0-3.5-3.5M15.5 10 12 13.5" stroke="#2555BB" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="23" cy="10" r="3.25" stroke="#2555BB" stroke-width="2.5"/>
+  <path d="M23 13.5c0 7.3-4.8 10.5-12.8 10.5h-2m0 0 3.5-3.5M8.2 24 11.7 27.5" stroke="#2555BB" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

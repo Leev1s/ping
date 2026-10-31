@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  Activity,
   ArrowDownToLine,
   Check,
   CircleCheck,
@@ -17,56 +16,198 @@ import {
   X,
 } from "lucide-react";
 import { NumberTicker } from "./components/magicui/number-ticker";
-import { copy, preference, savePreference, type Lang } from "./lib/i18n";
+import { TARGETS, probe, type Sample, type ProbeTarget } from "./lib/network";
+import { fetchConnectionInfo, type ConnectionReport } from "./lib/connection";
 import {
-  TARGETS,
-  probe,
-  fetchConnection,
-  type Sample,
-  type ProbeTarget,
-} from "./lib/network";
-import { distribution } from "./lib/distribution";
+  appendSample,
+  HISTORY_LIMIT,
+  plotHistory,
+  selectRecentHistory,
+} from "./lib/history";
+import { hasLatency, statistics } from "./lib/statistics";
 
-type History = Record<string, Sample[]>;
-const BIN_LABELS = ["<50", "50–100", "100–250", "250–500", "500–1k", "≥1k"];
+type ProbeHistory = { samples: Sample[]; total: number; failures: number };
+const timeFormat = new Intl.DateTimeFormat("en-GB", {
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hourCycle: "h23",
+});
+const EMPTY: ProbeHistory = { samples: [], total: 0, failures: 0 };
+const AVATARS: Record<string, string> = {
+  baidu: "BD",
+  bilibili: "BL",
+  wechat: "WX",
+  taobao: "TB",
+  cloudflare: "CF",
+  google: "G",
+  github: "GH",
+  microsoft: "MS",
+};
+const number = (value: number | null) =>
+  value === null ? "—" : Math.round(value).toLocaleString("en-US");
+
+function ProbePlot({
+  samples,
+  now,
+  windowMs,
+  scale,
+  stats,
+}: {
+  samples: Sample[];
+  now: number;
+  windowMs: number;
+  scale: number;
+  stats: ReturnType<typeof statistics>;
+}) {
+  const marks = plotHistory(samples.filter(hasLatency), now, windowMs);
+  const position = (value: number) =>
+    3 +
+    (Math.log1p(Math.min(scale, Math.max(0, value))) / Math.log1p(scale)) * 94;
+  const x = (value: number) => `${position(value)}%`;
+  const overflow = samples.filter(
+    (sample) => hasLatency(sample) && sample.latency > scale,
+  ).length;
+  return (
+    <div className="plot-frame">
+      <svg
+        className="boxplot"
+        data-scale={scale}
+        role="img"
+        aria-label={`HTTP latency, ${stats.count} valid samples. Median ${number(stats.median)} ms, Q1 ${number(stats.q1)}, Q3 ${number(stats.q3)}. ${overflow} readings above ${scale} ms.`}
+      >
+        <title>
+          Box: Q1–Q3. Line: median. Whiskers: 1.5×IQR. Dots: measurements, older
+          points fade. Fixed log(1 + ms) axis.
+        </title>
+        {[0, 10, 100, scale].map((tick) => (
+          <line
+            className="plot-gridline"
+            key={tick}
+            x1={x(tick)}
+            x2={x(tick)}
+            y1="6%"
+            y2="94%"
+          />
+        ))}
+        {stats.count >= 5 &&
+          stats.q1 !== null &&
+          stats.q3 !== null &&
+          stats.low !== null &&
+          stats.high !== null && (
+            <>
+              <line
+                className="whisker"
+                x1={x(stats.low)}
+                x2={x(stats.high)}
+                y1="28%"
+                y2="28%"
+              />
+              {[stats.low, stats.high].map((v, i) => (
+                <line
+                  className="whisker"
+                  key={i}
+                  x1={x(v)}
+                  x2={x(v)}
+                  y1="15%"
+                  y2="41%"
+                />
+              ))}
+              <rect
+                className="iqr-box"
+                x={x(stats.q1)}
+                y="11%"
+                width={`${Math.max(0.4, position(stats.q3) - position(stats.q1))}%`}
+                height="34%"
+                rx="1"
+              />
+              <line
+                className="median-line"
+                x1={x(stats.median!)}
+                x2={x(stats.median!)}
+                y1="11%"
+                y2="45%"
+              />
+            </>
+          )}
+        {marks.map(({ sample, opacity }, i) => (
+          <circle
+            className={`sample-point ${sample.latency! > scale ? "is-overflow" : ""}`}
+            key={`${sample.at}-${i}`}
+            cx={x(sample.latency!)}
+            cy={`${69 + ((Math.floor(sample.at) % 13) - 6) * 1.6}%`}
+            r="2"
+            opacity={opacity}
+          >
+            <title>
+              {timeFormat.format(sample.at)} · {number(sample.latency)} ms
+            </title>
+          </circle>
+        ))}
+        {overflow > 0 && (
+          <path
+            className="overflow-marker"
+            d="M-4 -3L0 0L-4 3"
+            transform="translate(0 0)"
+            style={{ transform: "translate(calc(100% - 1px), 28%)" }}
+          />
+        )}
+      </svg>
+      <div
+        className="plot-axis"
+        aria-label="Fixed logarithmic millisecond scale"
+      >
+        {[0, 10, 100, scale].map((tick, i) => (
+          <span
+            key={tick}
+            style={{
+              left: x(tick),
+              transform:
+                i === 0
+                  ? "none"
+                  : i === 3
+                    ? "translateX(-100%)"
+                    : "translateX(-50%)",
+            }}
+          >
+            {tick >= 1000 ? `${tick / 1000}k` : tick}
+            {i === 3 ? " ms" : ""}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export default function App() {
-  const [lang, setLang] = useState<Lang>(() =>
-    preference(
-      "ping-language",
-      navigator.language.startsWith("zh") ? "zh" : "en",
-    ) === "zh"
-      ? "zh"
-      : "en",
-  );
-  const t = copy[lang];
   const [paused, setPaused] = useState(false);
   const [visible, setVisible] = useState(!document.hidden);
   const [online, setOnline] = useState(navigator.onLine);
   const [interval, setIntervalSeconds] = useState(() => {
-    const n = Number(preference("ping-interval", "5"));
-    return [3, 5, 10].includes(n) ? n : 5;
+    try {
+      const n = Number(localStorage.getItem("ping-interval") ?? 5);
+      return [3, 5, 10].includes(n) ? n : 5;
+    } catch {
+      return 5;
+    }
   });
-  const [history, setHistory] = useState<History>({});
-  const [selected, setSelected] = useState("cloudflare");
-  const [connection, setConnection] =
-    useState<Awaited<ReturnType<typeof fetchConnection>>>(null);
-  const [infoState, setInfoState] = useState<"loading" | "ready" | "error">(
-    "loading",
-  );
+  const [windowMinutes, setWindowMinutes] = useState(5);
+  const [scale, setScale] = useState(1000);
+  const [history, setHistory] = useState<Record<string, ProbeHistory>>({});
+  const [now, setNow] = useState(Date.now);
+  const [startedAt, setStartedAt] = useState(Date.now);
+  const [connection, setConnection] = useState<ConnectionReport>({
+    cloudflare: null,
+    ipinfo: null,
+  });
+  const [connectionLoading, setConnectionLoading] = useState(true);
   const [infoVersion, setInfoVersion] = useState(0);
-  const [showIP, setShowIP] = useState(false);
+  const [showAddresses, setShowAddresses] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [notice, setNotice] = useState("");
   const [epoch, setEpoch] = useState(0);
   const menu = useRef<HTMLDialogElement>(null);
-  const moreButton = useRef<HTMLButtonElement>(null);
   const running = !paused && visible && online;
-  useEffect(() => {
-    document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
-    document.title = `Ping · ${t.network}`;
-    savePreference("ping-language", lang);
-  }, [lang, t.network]);
   useEffect(() => {
     const visibility = () => setVisible(!document.hidden);
     const net = () => setOnline(navigator.onLine);
@@ -80,6 +221,12 @@ export default function App() {
     };
   }, []);
   useEffect(() => {
+    if (!visible) return;
+    setNow(Date.now());
+    const timer = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, [visible]);
+  useEffect(() => {
     if (!running) return;
     const controller = new AbortController();
     const timers = new Set<ReturnType<typeof setTimeout>>();
@@ -88,10 +235,22 @@ export default function App() {
       try {
         const sample = await probe(target, controller.signal);
         if (controller.signal.aborted) return;
-        setHistory((prev) => ({
-          ...prev,
-          [target.id]: [...(prev[target.id] ?? []), sample].slice(-60),
-        }));
+        setNow(sample.at);
+        setHistory((prev) => {
+          const h = prev[target.id] ?? EMPTY;
+          return {
+            ...prev,
+            [target.id]: {
+              samples: appendSample(h.samples, sample),
+              total: h.total + 1,
+              failures:
+                h.failures +
+                (sample.outcome === "error" || sample.outcome === "timeout"
+                  ? 1
+                  : 0),
+            },
+          };
+        });
       } catch {
         if (controller.signal.aborted) return;
       }
@@ -114,61 +273,64 @@ export default function App() {
   }, [running, interval, epoch]);
   useEffect(() => {
     const controller = new AbortController();
-    setInfoState("loading");
-    fetchConnection(controller.signal)
-      .then((result) => {
+    setConnectionLoading(true);
+    fetchConnectionInfo(controller.signal)
+      .then((report) => {
         if (!controller.signal.aborted) {
-          setConnection(result);
-          setInfoState(result ? "ready" : "error");
+          setConnection(report);
+          setConnectionLoading(false);
         }
       })
       .catch(() => {
-        if (!controller.signal.aborted) setInfoState("error");
+        if (!controller.signal.aborted) setConnectionLoading(false);
       });
     return () => controller.abort();
   }, [infoVersion]);
+  useEffect(() => {
+    if (menuOpen) menu.current?.showModal();
+    else menu.current?.close();
+  }, [menuOpen]);
   useEffect(() => {
     if (!notice) return;
     const timer = setTimeout(() => setNotice(""), 2200);
     return () => clearTimeout(timer);
   }, [notice]);
-  useEffect(() => {
-    if (menuOpen) menu.current?.showModal();
-    else menu.current?.close();
-  }, [menuOpen]);
-  const closeMenu = () => {
-    setMenuOpen(false);
-    moreButton.current?.focus();
-  };
-  const nameOf = (target: ProbeTarget) =>
-    target.region === "cn"
-      ? t[target.id as "baidu" | "bilibili" | "wechat" | "taobao"]
-      : target.name;
-  const selectedTarget = TARGETS.find((target) => target.id === selected)!;
-  const samples = history[selected] ?? [];
-  const stats = distribution(samples);
-  const total = Object.values(history).reduce(
-    (sum, items) => sum + items.length,
+  const total = Object.values(history).reduce((sum, h) => sum + h.total, 0);
+  const retained = Object.values(history).reduce(
+    (sum, h) => sum + h.samples.length,
     0,
   );
+  const failures = Object.values(history).reduce(
+    (sum, h) => sum + h.failures,
+    0,
+  );
+  const duration = Math.max(0, Math.floor((now - startedAt) / 1000));
+  const elapsed = `${Math.floor(duration / 3600)
+    .toString()
+    .padStart(2, "0")}:${Math.floor((duration % 3600) / 60)
+    .toString()
+    .padStart(2, "0")}:${(duration % 60).toString().padStart(2, "0")}`;
   const stateText = !online
-    ? t.offline
+    ? "Offline"
     : paused
-      ? t.paused
+      ? "Paused"
       : !visible
-        ? t.hidden
-        : t.live;
+        ? "Hidden"
+        : "Live";
   const exportData = () => {
     const payload = {
       app: "Ping",
-      version: 2,
+      version: 3,
       exportedAt: new Date().toISOString(),
-      measurement:
-        "Browser HTTP time to response headers; not ICMP. Opaque responses do not verify HTTP status.",
+      startedAt: new Date(startedAt).toISOString(),
       intervalSeconds: interval,
+      windowMinutes,
+      retentionLimit: HISTORY_LIMIT,
+      measurement:
+        "Browser HTTP time to response headers; not ICMP. Opaque timings do not verify HTTP status.",
       targets: TARGETS.map((target) => ({
         ...target,
-        samples: history[target.id] ?? [],
+        ...(history[target.id] ?? EMPTY),
       })),
     };
     const url = URL.createObjectURL(
@@ -181,71 +343,47 @@ export default function App() {
     a.download = `ping-${new Date().toISOString().replaceAll(":", "-")}.json`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    setNotice(t.exported);
-    closeMenu();
+    setNotice("Exported without addresses");
+    setMenuOpen(false);
   };
-  const metric = (value: number | null) =>
-    value === null ? "—" : <NumberTicker value={Math.round(value)} />;
-  const metrics = [
-    { label: "P50", value: stats.p50, title: t.median },
-    { label: "P95", value: stats.p95, title: t.sampleGate },
-    { label: t.jitter, value: stats.jitter, title: t.jitter },
-  ];
   return (
     <div className="app-shell">
       <header className="topbar">
-        <div className="identity">
-          <a className="brand" href="/" aria-label="Ping">
-            <Activity aria-hidden="true" size={22} />
-            <span>
-              ping<span className="brand-period">.</span>
-            </span>
-          </a>
-          <h1>{t.network}</h1>
-        </div>
+        <a className="brand" href="/" aria-label="Ping">
+          <img src="/brand/wordmark.svg" width="112" height="32" alt="Ping" />
+        </a>
+        <h1>Network status</h1>
         <div className="toolbar">
           <span className={`status-badge ${running ? "is-live" : ""}`}>
             <span className="status-dot" />
             {stateText}
+            <span className="cadence">{interval}s</span>
           </span>
-          <label className="interval-control">
+          <label className="history-control">
+            <span>History</span>
             <select
-              aria-label={t.interval}
-              value={interval}
-              onChange={(e) => {
-                const n = Number(e.target.value);
-                setIntervalSeconds(n);
-                savePreference("ping-interval", String(n));
-              }}
+              aria-label="History window"
+              value={windowMinutes}
+              onChange={(e) => setWindowMinutes(Number(e.target.value))}
             >
-              {[3, 5, 10].map((n) => (
+              {[5, 30, 60].map((n) => (
                 <option key={n} value={n}>
-                  {n} {t.seconds}
+                  {n}m
                 </option>
               ))}
             </select>
           </label>
           <button
-            className="control pause-button"
-            aria-label={paused ? t.resume : t.pause}
-            title={paused ? t.resume : t.pause}
+            className="control"
+            aria-label={paused ? "Resume" : "Pause"}
+            title={paused ? "Resume" : "Pause"}
             onClick={() => setPaused(!paused)}
           >
             {paused ? <Play size={17} /> : <Pause size={17} />}
           </button>
           <button
-            className="control language-button"
-            aria-label={t.language}
-            onClick={() => setLang(lang === "zh" ? "en" : "zh")}
-          >
-            <span className={lang === "zh" ? "language-active" : ""}>中</span>
-            <span className="language-divider">/</span>
-            <span className={lang === "en" ? "language-active" : ""}>EN</span>
-          </button>
-          <button
-            ref={moreButton}
             className="control"
-            aria-label={t.more}
+            aria-label="More options"
             aria-haspopup="dialog"
             aria-expanded={menuOpen}
             onClick={() => setMenuOpen(true)}
@@ -255,139 +393,244 @@ export default function App() {
         </div>
       </header>
       <main>
-        <section className="summary" aria-label={t.distribution}>
-          <div className="summary-heading">
-            <h2 className="summary-target">
-              {nameOf(selectedTarget)}
-              <span>HTTP · ms</span>
-            </h2>
-            <span className="sample-count">
-              <span className="mono">{stats.valid}</span> / 60{" "}
-              <span>{t.samples}</span>
-            </span>
-          </div>
-          <div className="summary-content">
-            <div className="metrics">
-              {metrics.map((item) => (
-                <div className="metric" key={item.label} title={item.title}>
-                  <span className="metric-label">{item.label}</span>
-                  <strong className="metric-value">{metric(item.value)}</strong>
-                </div>
-              ))}
-              <div className="metric">
-                <span className="metric-label">{t.failures}</span>
-                <strong className="metric-value failed-value">
-                  <span className={stats.failed ? "has-failures" : ""}>
-                    {stats.failed}
-                  </span>
-                  <span className="metric-denominator">/{samples.length}</span>
-                </strong>
-              </div>
-            </div>
-            <div className="distribution">
-              <div className="distribution-heading">
-                <span>{t.distribution}</span>
-                <span>0–100%</span>
-              </div>
-              <div
-                className="histogram"
-                role="img"
-                aria-label={`${t.distribution}: ${stats.bins.map((n, i) => `${BIN_LABELS[i]} ms: ${n}`).join(", ")}`}
+        <section
+          className="connection-panel"
+          aria-label="Connection information"
+        >
+          <div className="connection-heading">
+            <h2>Your connection</h2>
+            <div>
+              <button
+                className="control"
+                aria-label={showAddresses ? "Hide addresses" : "Show addresses"}
+                title={showAddresses ? "Hide addresses" : "Show addresses"}
+                onClick={() => setShowAddresses(!showAddresses)}
               >
-                {stats.bins.map((count, i) => (
-                  <div className="histogram-bin" key={i}>
-                    <div className="bin-track">
-                      <div
-                        className="bin-fill"
-                        style={{
-                          height: `${stats.valid ? (count / stats.valid) * 100 : 0}%`,
-                        }}
-                      />
-                    </div>
-                    <span className="bin-label">{BIN_LABELS[i]}</span>
-                  </div>
-                ))}
-              </div>
+                {showAddresses ? <EyeOff size={15} /> : <Eye size={15} />}
+              </button>
+              <button
+                className="control"
+                aria-label="Refresh connection info"
+                title="Refresh connection info"
+                disabled={connectionLoading}
+                onClick={() => setInfoVersion((n) => n + 1)}
+              >
+                <RefreshCw size={14} />
+              </button>
             </div>
+          </div>
+          <div className="connection-cards">
+            {(["cloudflare", "ipinfo"] as const).map((provider) => {
+              const data = connection[provider];
+              const location = [data?.city, data?.region, data?.countryCode]
+                .filter(Boolean)
+                .filter((v, i, a) => a.indexOf(v) === i)
+                .join(", ");
+              return (
+                <article
+                  className="connection-card"
+                  data-provider={provider}
+                  key={provider}
+                >
+                  <div className="exit-heading">
+                    <span className={`provider-mark ${provider}`}>
+                      {provider === "cloudflare" ? "CF" : "IP"}
+                    </span>
+                    <h3>
+                      {provider === "cloudflare" ? "Cloudflare" : "IPinfo"}
+                      <span>exit</span>
+                    </h3>
+                    <span className="ip-family">{data?.family ?? "—"}</span>
+                  </div>
+                  <div
+                    className={`exit-address ${!data ? "is-unavailable" : ""}`}
+                    title={showAddresses ? data?.ip : undefined}
+                  >
+                    {data
+                      ? showAddresses
+                        ? data.ip
+                        : "•••.•••.•••.•••"
+                      : connectionLoading
+                        ? "Checking…"
+                        : "Unavailable"}
+                  </div>
+                  {provider === "cloudflare" ? (
+                    <dl className="exit-details">
+                      <div>
+                        <dt>Country / edge</dt>
+                        <dd className="edge-value">
+                          {data?.countryCode ?? "—"} / {data?.colo ?? "—"}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Transport</dt>
+                        <dd className="tls-value">
+                          {data?.tls ?? "—"}
+                          <span className="warp-value">
+                            WARP {data?.warp ?? "—"}
+                          </span>
+                        </dd>
+                      </div>
+                    </dl>
+                  ) : (
+                    <dl className="exit-details">
+                      <div>
+                        <dt>Location</dt>
+                        <dd className="network-location" title={location}>
+                          {location || "—"}
+                        </dd>
+                      </div>
+                      <div>
+                        <dt>Network</dt>
+                        <dd>
+                          <span className="network-asn">
+                            {data?.asn ?? "—"}
+                          </span>
+                          <span
+                            className="network-organization"
+                            title={data?.organization}
+                          >
+                            {data?.organization ?? "—"}
+                          </span>
+                        </dd>
+                      </div>
+                    </dl>
+                  )}
+                </article>
+              );
+            })}
           </div>
         </section>
         <div className="regions">
           {(["cn", "global"] as const).map((region) => (
             <section
               className="region-panel"
-              key={region}
               data-region={region}
-              aria-label={t[region]}
+              key={region}
+              aria-label={region === "cn" ? "China" : "International"}
             >
               <div className="region-heading">
                 <h2>
                   {region === "cn" ? (
                     <span className="region-mark">CN</span>
                   ) : (
-                    <Globe2 size={15} />
+                    <Globe2 size={14} />
                   )}{" "}
-                  {t[region]}
+                  {region === "cn" ? "China" : "International"}
                 </h2>
-                <span className="region-count">04</span>
+                <span className="plot-legend">
+                  <span className="legend-old" />
+                  <span className="legend-new" />
+                  log · {windowMinutes}m
+                </span>
               </div>
               <div className="probe-grid">
                 {TARGETS.filter((target) => target.region === region).map(
                   (target) => {
-                    const attempts = history[target.id] ?? [];
-                    const last = attempts.at(-1);
-                    const ds = distribution(attempts);
+                    const h = history[target.id] ?? EMPTY;
+                    const recent = selectRecentHistory(
+                      h.samples,
+                      now,
+                      windowMinutes * 60000,
+                    );
+                    const stats = statistics(recent);
+                    const last = h.samples.at(-1);
+                    const value =
+                      last && hasLatency(last) ? last.latency : null;
                     const state = !last
-                      ? "waiting"
+                      ? "Waiting"
                       : last.outcome === "ok"
-                        ? "healthy"
+                        ? "HTTP verified"
                         : last.outcome === "unverified"
-                          ? "unverified"
+                          ? "HTTP unverified"
                           : last.outcome === "timeout"
-                            ? "timeout"
-                            : "error";
-                    const lastValue =
-                      last &&
-                      (last.outcome === "ok" || last.outcome === "unverified")
-                        ? last.latency
-                        : null;
+                            ? "Timeout"
+                            : "Failed";
                     return (
-                      <button
-                        className={`probe-card ${selected === target.id ? "is-selected" : ""}`}
+                      <article
+                        className="probe-card"
+                        data-region={region}
                         key={target.id}
-                        aria-pressed={selected === target.id}
-                        onClick={() => setSelected(target.id)}
-                        aria-label={`${nameOf(target)}, ${t[state]}, ${lastValue === null ? "—" : Math.round(lastValue)} ms`}
-                        title={`${new URL(target.url).hostname} · ${t[state]}`}
                       >
                         <div className="probe-heading">
-                          <span className="probe-name">{nameOf(target)}</span>
                           <span
-                            className={`probe-status status-${state}`}
-                            aria-label={t[state]}
+                            className={`service-avatar ${region}`}
+                            aria-hidden="true"
                           >
-                            {state === "healthy" ? (
-                              <CircleCheck size={13} />
-                            ) : state === "unverified" ? (
-                              <CircleHelp size={13} />
-                            ) : (
-                              <span className="status-dot" />
-                            )}
-                            <span>{t[state]}</span>
+                            {AVATARS[target.id]}
                           </span>
+                          <div className="probe-title">
+                            <h3 className="probe-name">
+                              {target.name}
+                              <span
+                                className={`probe-status ${last?.outcome ?? "waiting"}`}
+                                title={state}
+                                aria-label={state}
+                              >
+                                {last?.outcome === "ok" ? (
+                                  <CircleCheck size={12} />
+                                ) : last?.outcome === "unverified" ? (
+                                  <CircleHelp size={12} />
+                                ) : (
+                                  <span className="status-dot" />
+                                )}
+                                <span>
+                                  {state === "Failed" || state === "Timeout"
+                                    ? state
+                                    : ""}
+                                </span>
+                              </span>
+                            </h3>
+                            <span className="probe-domain">
+                              {new URL(target.url).hostname}
+                            </span>
+                          </div>
+                          <div className="latest-reading">
+                            <strong className="probe-latest">
+                              {value === null ? (
+                                "—"
+                              ) : (
+                                <NumberTicker value={Math.round(value)} />
+                              )}
+                            </strong>
+                            <span>ms</span>
+                          </div>
                         </div>
-                        <div className="probe-reading">
-                          <strong className="probe-value">
-                            {metric(lastValue)}
-                          </strong>
-                          <span className="probe-unit">ms</span>
-                          <span className="probe-median">
-                            P50{" "}
+                        <ProbePlot
+                          samples={recent}
+                          now={now}
+                          windowMs={windowMinutes * 60000}
+                          scale={scale}
+                          stats={stats}
+                        />
+                        <div className="probe-footer">
+                          <div className="probe-stats">
                             <span>
-                              {ds.p50 === null ? "—" : Math.round(ds.p50)}
+                              P50 <b>{number(stats.median)}</b>
+                            </span>
+                            <span>
+                              P95{" "}
+                              <b title="Available after 40 valid readings">
+                                {number(stats.p95)}
+                              </b>
+                            </span>
+                            <span>
+                              Jit <b>{number(stats.jitter)}</b>
+                            </span>
+                          </div>
+                          <span
+                            className={`probe-count ${stats.failed ? "has-failures" : ""}`}
+                            title={`${stats.count} valid, ${stats.failed} failed in the selected window. ${h.total} total this session.`}
+                          >
+                            <span className="probe-window-count">
+                              {stats.attempts} n
+                            </span>
+                            <span className="failure-count">
+                              {stats.failed} fail
                             </span>
                           </span>
                         </div>
-                      </button>
+                      </article>
                     );
                   },
                 )}
@@ -396,88 +639,107 @@ export default function App() {
           ))}
         </div>
       </main>
-      <footer className="connection-strip">
-        <div className="connection-ip">
-          <span className="connection-label">IP</span>
-          <span
-            className="ip-value"
-            title={showIP ? connection?.ip : undefined}
-          >
-            {connection?.ip
-              ? showIP
-                ? connection.ip
-                : "•••.•••.•••.•••"
-              : "—"}
-          </span>
-          <button
-            className="control ip-control"
-            aria-label={showIP ? t.conceal : t.reveal}
-            onClick={() => setShowIP(!showIP)}
-          >
-            {showIP ? <EyeOff size={15} /> : <Eye size={15} />}
-          </button>
-        </div>
-        <span
-          className="edge-value"
-          title={`${t.edge}: ${connection?.colo ?? t.unavailable}`}
+      <footer className="session-strip">
+        <span className="session-clock">
+          <span className="status-dot" />
+          {elapsed}
+        </span>
+        <span>
+          <b className="session-total">{total.toLocaleString("en-US")}</b>
+          <span> checks</span>
+        </span>
+        <span className="retention-label">
+          <b className="retained-total">{retained.toLocaleString("en-US")}</b> /{" "}
+          {(TARGETS.length * HISTORY_LIMIT).toLocaleString("en-US")} retained
+        </span>
+        <span className="session-failures">
+          <b>{failures}</b> failed
+        </span>
+        <a
+          href="https://github.com/Leev1s/ping"
+          target="_blank"
+          rel="noreferrer"
+          aria-label="GitHub"
         >
-          {connection?.country ?? "—"}
-          <span className="edge-divider">/</span>
-          {connection?.colo ?? "—"}
-        </span>
-        <span className="window-count" title={t.window}>
-          <span className="mono">{total}</span> / 480
-        </span>
-        <span
-          className={`connection-state ${infoState}`}
-          aria-label={infoState === "error" ? t.unavailable : undefined}
-        >
-          {infoState === "loading" ? (
-            <RefreshCw size={12} />
-          ) : (
-            <span className="status-dot" />
-          )}
-        </span>
+          <Github size={14} />
+        </a>
       </footer>
       <dialog
         ref={menu}
         className="more-menu"
-        aria-label={t.more}
+        aria-label="More options"
         onCancel={() => setMenuOpen(false)}
-        onClick={(e) => {
-          if (e.target === menu.current) closeMenu();
-        }}
         onClose={() => setMenuOpen(false)}
+        onClick={(e) => {
+          if (e.target === menu.current) setMenuOpen(false);
+        }}
       >
         <div className="menu-heading">
-          <span>{t.more}</span>
-          <button className="control" aria-label={t.close} onClick={closeMenu}>
+          <span>Options</span>
+          <button
+            className="control"
+            aria-label="Close menu"
+            onClick={() => setMenuOpen(false)}
+          >
             <X size={18} />
           </button>
         </div>
+        <label className="menu-setting">
+          Sampling interval
+          <select
+            aria-label="Sampling interval"
+            value={interval}
+            onChange={(e) => {
+              const n = Number(e.target.value);
+              setIntervalSeconds(n);
+              try {
+                localStorage.setItem("ping-interval", String(n));
+              } catch {
+                /* preferences are optional */
+              }
+            }}
+          >
+            {[3, 5, 10].map((n) => (
+              <option key={n} value={n}>
+                {n} seconds
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          aria-label="Plot scale"
+          onClick={() => setScale((s) => (s === 1000 ? 5000 : 1000))}
+        >
+          <Globe2 size={17} />
+          Plot scale
+          <span className="menu-value">
+            0–{scale.toLocaleString("en-US")} ms
+          </span>
+        </button>
         <button onClick={exportData}>
           <ArrowDownToLine size={17} />
-          {t.export}
+          Export data
         </button>
         <button
           onClick={() => {
             setEpoch((e) => e + 1);
             setHistory({});
-            setNotice(t.cleared);
-            closeMenu();
+            setStartedAt(Date.now());
+            setNotice("Started a new session");
+            setMenuOpen(false);
           }}
         >
           <RotateCcw size={17} />
-          {t.reset}
+          Clear history
         </button>
         <button
           onClick={() => {
             setInfoVersion((v) => v + 1);
-            closeMenu();
+            setMenuOpen(false);
           }}
         >
           <RefreshCw size={17} />
-          {t.refresh}
+          Refresh connection info
         </button>
         <a
           href="https://github.com/Leev1s/ping"
