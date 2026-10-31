@@ -9,7 +9,7 @@ Ping is a single-page network status dashboard. It continuously measures browser
 
 - See current latency, reachability, P50/P95, jitter, and a rolling distribution for each probe.
 - Compare IPv4 and IPv6 exit addresses from mainland and international sources, with independent availability results.
-- Sampling defaults to 3 seconds and can be adjusted. The page keeps a bounded history in memory.
+- Sampling defaults to 3 seconds and can be adjusted. Each probe keeps a rolling window of 120 attempts.
 
 Measurements run from your browser and time requests through response headers. This is not ICMP ping or a bandwidth test. Probe and IP-service requests go directly to their providers; Ping has no server relay or analytics. IP addresses are visible by default and can be hidden. They are excluded from probe history and exports. Background sampling is best effort; browsers may throttle or suspend it.
 

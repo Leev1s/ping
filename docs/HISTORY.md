@@ -1,40 +1,15 @@
-# Continuous sample history
+# Rolling sample history
 
-Each probe keeps its latest **1,200 attempts** in page memory, including failures. At the default 3-second interval this is about 60 minutes of attempts; at 1 second it is about 20 minutes. The effective chart and statistics window is fixed at the trailing **30 minutes**. At intervals faster than the cap can cover, the page uses the available retained portion of that window. New attempts replace the oldest record for that probe after the cap, so sampling does not stop and memory does not grow with session length. Eight probes retain at most 9,600 records. JavaScript object size varies by browser; each record contains a timestamp, latency or null, outcome, and optional verification label.
+Each probe retains its latest **120 completed attempts**, including failures. A new attempt immediately replaces the oldest one at capacity. Statistics, box plots, dynamic axis bounds and JSON exports use this same window; no separate archive or time-based cutoff remains. The first request per probe is warm-up and never enters the window. Lifetime counters continue beyond 120.
 
-Statistics use every eligible sample retained inside the fixed 30-minute window. Each probe's scatter plot draws at most **120 valid marks**. When the window has more points, the drawing keeps the newest 24 marks, window endpoints and observed minimum/maximum latency, then fills remaining slots by a deterministic per-sample priority. Existing marks do not get reranked when a new sample arrives. Stable sample identities preserve their DOM nodes and vertical lanes; horizontal positions stay fixed while the regional axis range is unchanged. Coincident duplicate records share a drawn mark but remain separate statistics records. This drawing limit does not change statistics. Each mark's opacity uses its actual age in the window (newest 1.0, oldest 0.16), rather than its position in the array. Failed attempts remain in retained history and counters but do not become latency dots. Error-response latency is excluded from percentiles and the box plot.
+At the default 3-second interval the window covers roughly six minutes; at 1 second, roughly two minutes. Timeouts can make the actual duration longer. Pausing preserves the current 120 attempts rather than expiring them by elapsed time.
 
-The 1,200-attempt cap is independent of session duration and sample rate. Its approximate time coverage is `1,200 × interval` seconds, while the visible analysis window remains 30 minutes. Session totals and failure counters continue to increase after samples start being evicted.
+Failures occupy a window position but do not become latency dots or percentile inputs. They break jitter adjacency. After 120 consecutive failures, the latency distribution is empty, rather than retaining old successes indefinitely. Percentiles and Tukey whiskers use every valid reading in the window.
 
-This is session history only: samples are not copied to local storage or sent to a server. Closing or refreshing the page clears them. The theme and interval preferences are stored locally, separately from measurement history. Manual JSON export includes retained samples and session counters but no IP details. Clearing history resets the session counters and starts a new measurement session.
+All valid window points are drawn, with no priority sampling, extrema reservation or chronological re-sorting. Stable keys and timestamp-derived vertical lanes preserve retained point identity. Coincident records share one drawn mark while remaining separate statistics records. New valid measurements receive the existing one-shot 900 ms ring; reduced-motion behavior remains.
 
-The plot keeps a fixed physical frame while its linear range adapts independently
-for China and International. Each range uses the largest of that group's four
-per-probe P95 values rounded up to 50 ms for the upper bound, and the lowest valid
-reading rounded down to 50 ms for the lower bound. The minimum span is 50 ms,
-with 0–50 ms before valid readings. Labels are thinned when necessary; tick marks
-retain the 50 ms base increment.
+Point opacity follows attempt age: `0.12 + 0.88 × 2^(−age / 30)`, where the latest attempt has age zero. A valid point is 100% opaque when new, about 56% after 30 newer attempts, 34% after 60, and 18% at the oldest edge. Failures also advance this aging. No fading timer is needed; pausing stops the rank from changing.
 
-When hidden, sampling continues on a best-effort basis; browsers can throttle or
-suspend timers. On return, Ping starts a fresh round immediately and does not
-replay missed intervals.
+Across eight probes at most 960 raw records remain. Plot and summary work is memoized by each immutable sample array; footer-clock updates do not rebuild charts. Closing/refreshing clears session data. JSON export version 6 records `windowSamples: 120` and `retentionLimit: 120`, without connection addresses or a time-window field.
 
-## Memory rationale
-
-The retained object count is bounded by `8 × 1,200`, regardless of how long the page stays open. Each update returns a fresh capped array; the previous array can be collected after no render references it. Browser JavaScript engines reclaim unreachable objects, so evicted records must no longer be held by strong references. The history module does not use Resource Timing entries or increase the browser's separate resource-timing buffer.
-
-Sources: [MDN JavaScript memory management](https://developer.mozilla.org/en-US/docs/Web/JavaScript/Guide/Memory_management), [MDN Performance data](https://developer.mozilla.org/en-US/docs/Web/API/Performance_API/Performance_data), and [MDN Resource Timing](https://developer.mozilla.org/en-US/docs/Web/API/Performance_API/Resource_timing).
-
-## Acceptance checks
-
-- After 100,000 appends, one probe still retains exactly 1,200 attempts and the newest attempt; the oldest retained record advances as samples arrive.
-- Across eight probes, in-memory history never exceeds 9,600 records, regardless of session duration.
-- The fixed trailing 30-minute view excludes older and future-dated samples while retaining failed attempts for status and counters.
-- Statistics read every eligible retained sample in the window; each plot draws no more than 120 valid marks and preserves endpoints and latency extrema when the point limit permits.
-- Point opacity reflects elapsed age. Eviction removes old records and dynamic range changes without resizing the plot frame.
-
-The raw-history cap is internal memory management, not a measurement limit. The status bar shows cumulative session measurements and elapsed time, without a retained/cap meter. First requests are warm-up and do not enter retained history or counters.
-
-A new valid measurement receives one clipped 900 ms expansion ring at its actual point location. Clock ticks, theme changes and failed attempts do not retrigger the ring. There is at most one ring per probe, and reduced-motion preferences disable it. Dynamic regional range changes still reproject points onto the correct numeric scale.
-
-Rendering reuses unchanged plot subtrees. The five-second opacity clock only affects subtle visual fading; new measurements appear immediately. Statistical window summaries expire at their next exact eligibility boundary, independently of that visual clock. Filtering chronological streams avoids allocating per-record wrapper objects or sorting them again.
+Each region still shares dynamic linear bounds: lowest valid reading rounded down to 50 ms, highest per-probe P95 rounded up to 50 ms, minimum span 50 ms. Axis changes reproject existing values correctly without resizing the plot frame.

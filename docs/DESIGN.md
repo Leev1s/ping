@@ -41,25 +41,17 @@ These are public HTTP endpoints rather than contractual probe APIs. The pinned j
 
 Every probe uses a fixed-size horizontal Tukey box plot. Each region's four probes share a linear range: the right bound is a lower bound at the lowest valid sample rounded down to 50 ms and an upper bound at the largest per-probe P95 rounded up to 50 ms. At least one 50 ms interval is shown; empty groups default to 0–50 ms. Tick marks use 50 ms increments, with sparse labels to prevent overlap. Q1 and Q3 delimit the box, the median is its center line, and whiskers reach the most extreme observations within the 1.5 × IQR fences. Quartiles use linear interpolation over sorted values. The box and whiskers appear after five valid measurements. Individual sample points remain visible, including outliers. Points beyond the current range stay clipped to the boundary and are indicated separately; the card and plot frame keep fixed dimensions as the shared range changes.
 
-All statistics use valid samples from the fixed trailing 30-minute window:
+All statistics use the latest 120 completed attempts for that probe. Warm-up requests are excluded; failed attempts count toward the window but not percentiles, and break adjacent jitter pairs. P95 is nearest rank and carries `~` below 40 valid readings. P50/quartiles are linearly interpolated; whiskers use the 1.5 × IQR fences. The old time window and display-priority sampler are removed.
 
-- **Valid latency:** finite, non-negative elapsed time from an HTTP-successful or opaque response. Opaque results remain unverified.
-- **P50:** the median.
-- **P95:** nearest-rank 95th percentile. It appears from the first valid sample; a `~` prefix is shown while there are fewer than 40 readings. The marker means “early, low-sample estimate,” not a confidence interval or population-level guarantee. It shows `—` only when there are no valid readings.
-- **Jitter:** mean absolute difference between adjacent valid response times. A failed attempt breaks the adjacent pair.
-- **Failures:** HTTP errors, timeouts, and rejected fetches count as failed attempts, not latency samples or packet loss.
-
-The plot draws at most 120 valid samples per probe. If more are available, it retains a recent tail and the window endpoints/extrema, then selects older marks by fixed per-sample priority. Stable keys preserve the retained point nodes and jitter lanes instead of redrawing a different evenly spaced sample every round. A new valid point gets one 900 ms expansion ring, clipped to its plot; reduced-motion preferences disable the animation. This is only a rendering limit: it does not change P50, P95, quartiles, whiskers, or jitter. Older points fade based on their actual age inside the fixed window. Probe dots change from green at low latency through amber to red at 500 ms and flash during a request. A failed latest attempt shows Timeout, HTTP error, or No reply without fabricating a reading; retained history remains visible but dimmed.
+Every valid window point is drawn. Retained point keys and vertical lanes stay stable. Newest points are fully opaque; opacity declines with each newer attempt, using a 30-attempt half-life above a 0.12 floor. New valid points retain the one-shot ring. Probe dots run green-to-red from 0 to 500 ms. Failed latest attempts show Timeout, HTTP error or No reply and dim remaining historical points.
 
 Cloudflare Speed Test is a useful reference for separating latency, jitter, and bandwidth measurements; Ping adopts no download/upload test or provider-specific quality score. See [Cloudflare Speed Test: About](https://speed.cloudflare.com/about), its [measurement engine](https://github.com/cloudflare/speedtest), and [NIST's box-plot definition](https://www.itl.nist.gov/div898/handbook/eda/section3/boxplot.htm).
 
 ## Continuous history and memory bound
 
-Each probe retains at most 1,200 attempts in page memory, including failures; the maximum across eight probes is 9,600 records. At the default 3-second interval, the cap represents about 60 minutes, enough to fill the fixed 30-minute view. At a 1-second interval, it represents about 20 minutes, so the chart and statistics use the available portion of the fixed window. The oldest record is replaced as each probe reaches its cap; sampling and lifetime counters continue.
+Each probe retains at most 120 completed attempts; all eight retain at most 960 records. Eviction, statistics and drawing use the same count-based window. Lifetime counters continue after eviction. At 3 seconds this is roughly six minutes, at 1 second roughly two; stalled requests lengthen the elapsed coverage. Paused sessions preserve the window.
 
-The rendered plot is further limited to 120 valid marks per probe. Recent points, window endpoints and extrema are retained, with stable-priority selection of older marks. Mark opacity uses elapsed age within the 30-minute window (newest 1.0, oldest 0.16), with a five-second visual refresh tick; each new measurement renders immediately. Per-probe summaries are reused until new data arrives or an exact window boundary changes eligibility. The history does not grow with session duration.
-
-History is session-only: it is not written to local storage or sent to a Ping server. Refresh or close clears it. Export includes retained per-probe samples and counters, not connection IP addresses. See [HISTORY.md](HISTORY.md) for the retention rationale and checks.
+Samples remain session-only, never in local storage or a Ping server. Export includes the 120-attempt windows and counters, without connection addresses. See [HISTORY.md](HISTORY.md) for exact fading and eviction behavior.
 
 ## Connection information and API limits
 

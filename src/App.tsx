@@ -21,14 +21,8 @@ import {
   type ConnectionReport,
 } from "./lib/connection";
 import { appendSample, HISTORY_LIMIT, plotHistory } from "./lib/history";
-import {
-  hasLatency,
-  statistics,
-  groupRange,
-  createWindowStatistics,
-} from "./lib/statistics";
+import { hasLatency, statistics, groupRange } from "./lib/statistics";
 
-const WINDOW_MINUTES = 30;
 type ProbeHistory = { samples: Sample[]; total: number; failures: number };
 const timeFormat = new Intl.DateTimeFormat("en-GB", {
   hour: "2-digit",
@@ -42,7 +36,6 @@ const number = (value: number | null) =>
 
 const ProbePlot = memo(function ProbePlot({
   samples,
-  now,
   stats,
   scale,
   lower,
@@ -50,15 +43,10 @@ const ProbePlot = memo(function ProbePlot({
   scale: number;
   lower: number;
   samples: Sample[];
-  now: number;
   stats: ReturnType<typeof statistics>;
 }) {
   const rippleClip = useId();
-  const marks = plotHistory(
-    samples.filter(hasLatency),
-    now,
-    WINDOW_MINUTES * 60000,
-  );
+  const marks = plotHistory(samples);
   const latest = samples.at(-1);
   const newest = latest && hasLatency(latest) ? marks.at(-1) : undefined;
   const y = (sample: Sample) =>
@@ -384,18 +372,18 @@ export default function App() {
     const timer = setTimeout(() => setNotice(""), 2200);
     return () => clearTimeout(timer);
   }, [notice]);
-  const windowCaches = useRef<
-    Record<string, ReturnType<typeof createWindowStatistics>>
+  const summaryCache = useRef<
+    Record<string, { samples: Sample[]; stats: ReturnType<typeof statistics> }>
   >({});
-  // New samples render immediately; slow visual aging needs no per-second chart work.
-  const opacityNow = Math.floor(now / 5000) * 5000;
   const summaries = Object.fromEntries(
     TARGETS.map((target) => {
       const h = history[target.id] ?? EMPTY;
-      const summarize = (windowCaches.current[target.id] ??=
-        createWindowStatistics(WINDOW_MINUTES * 60000));
-      const { recent, stats } = summarize(h.samples, now);
-      return [target.id, { h, recent, stats }];
+      let cached = summaryCache.current[target.id];
+      if (cached?.samples !== h.samples) {
+        cached = { samples: h.samples, stats: statistics(h.samples) };
+        summaryCache.current[target.id] = cached;
+      }
+      return [target.id, { h, recent: h.samples, stats: cached.stats }];
     }),
   );
   const ranges = Object.fromEntries(
@@ -429,11 +417,11 @@ export default function App() {
   const exportData = () => {
     const payload = {
       app: "Ping",
-      version: 5,
+      version: 6,
       exportedAt: new Date().toISOString(),
       startedAt: new Date(startedAt).toISOString(),
       intervalSeconds: interval,
-      windowMinutes: WINDOW_MINUTES,
+      windowSamples: HISTORY_LIMIT,
       retentionLimit: HISTORY_LIMIT,
       measurement:
         "Browser HTTP time to response headers; not ICMP. Opaque timings do not verify HTTP status.",
@@ -706,7 +694,6 @@ export default function App() {
                         </div>
                         <ProbePlot
                           samples={recent}
-                          now={Math.max(opacityNow, recent.at(-1)?.at ?? 0)}
                           stats={stats}
                           scale={ranges[region].max}
                           lower={ranges[region].min}

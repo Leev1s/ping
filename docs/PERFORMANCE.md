@@ -40,3 +40,7 @@ The matched before/after numbers combine these changes; they do not isolate the 
 ## Session artifacts
 
 Temporary, session-local artifacts are in `/tmp/ping-perf-baseline-dist`, `/tmp/ping-prod-profile.mjs`, `/tmp/ping-prod-profile-names.mjs`, `/tmp/ping-memory-profile.mjs`, `/tmp/ping-perf-ablations.mjs`, `/tmp/ping-perf-ablation-full.mjs`, `/tmp/ping-before-after.mjs` and `/tmp/ping-fullhistory-ab.mjs`. These are diagnostic artifacts, not production instrumentation or permanent repository tooling. The full-history scripts seed React state only for the controlled benchmark; normal production data still comes solely from probes.
+
+## Subsequent count-window simplification
+
+The later 120-attempt window replaces the previously measured 1,200-record cap and 30-minute cutoff. Raw retention falls from 9,600 to 960 records across eight probes. The time-filter/expiry cache, FNV priorities, priority sort, recent-tail reservation and five-second opacity refresh were removed. Statistics sort at most 120 valid values; plotting is linear over at most 120 attempts. Retained-heap and CPU percentages above describe the earlier measured implementation, not a fresh benchmark of this change. SVG point capacity is unchanged, so rendering cost should not be expected to fall by the same 90% as raw retention.

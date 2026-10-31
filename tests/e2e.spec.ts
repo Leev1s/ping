@@ -294,7 +294,7 @@ async function readDownload(page: Page, action: string) {
       total: number;
       failures: number;
     }>;
-    windowMinutes: number;
+    windowSamples: number;
     retentionLimit: number;
   };
 }
@@ -700,7 +700,17 @@ test("keeps sampling beyond 120 points with stable marks, arrival rings and boun
   // Keep this synthetic stress replay independent of real renderer speed.
   // The next cycle starts only after all responses/React commits have settled.
   await page.clock.pauseAt(await page.evaluate(() => Date.now() + 100));
-  await advanceProbeCycles(page, session.requests, 125);
+  await advanceProbeCycles(page, session.requests, 1);
+  const initialKeys = await page
+    .locator("circle.sample-point")
+    .evaluateAll((points) =>
+      points.map((point) => point.getAttribute("data-sample-key")),
+    );
+  await advanceProbeCycles(page, session.requests, 124);
+  for (const key of initialKeys)
+    await expect(
+      page.locator(`circle.sample-point[data-sample-key="${key}"]`),
+    ).toHaveCount(0);
 
   for (const name of [
     "Cloudflare",
@@ -779,7 +789,7 @@ test("keeps sampling beyond 120 points with stable marks, arrival rings and boun
       delete state.__pointSnapshot;
       return { retained, stable };
     });
-  expect(stability.retained).toBeGreaterThanOrEqual(8 * (120 - 4));
+  expect(stability.retained).toBe(8 * 119);
   expect(stability.stable).toBe(true);
   await expect(page.locator("circle.sample-ripple")).toHaveCount(8);
   for (const card of await page.locator("article.probe-card").all()) {
@@ -843,11 +853,11 @@ test("keeps sampling beyond 120 points with stable marks, arrival rings and boun
 
   const payload = await readDownload(page, "Export data");
   expect(payload.targets).toHaveLength(8);
-  expect(payload.windowMinutes).toBe(30);
-  expect(payload.retentionLimit).toBe(1_200);
+  expect(payload.windowSamples).toBe(120);
+  expect(payload).not.toHaveProperty("windowMinutes");
+  expect(payload.retentionLimit).toBe(120);
   for (const target of payload.targets) {
-    expect(target.samples.length, target.id).toBeGreaterThan(60);
-    expect(target.samples.length, target.id).toBeLessThanOrEqual(1_200);
+    expect(target.samples, target.id).toHaveLength(120);
     expect(target.total).toBeGreaterThan(60);
     expect(target.failures).toBe(0);
   }
